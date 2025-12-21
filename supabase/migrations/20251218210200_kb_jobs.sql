@@ -29,7 +29,7 @@ with check (public.is_admin() or public.is_workspace_member(workspace_id));
 drop policy if exists kb_jobs_update_admin on public.kb_jobs;
 create policy kb_jobs_update_admin
 on public.kb_jobs
-for update, delete
+for all
 using (public.is_admin())
 with check (public.is_admin());
 

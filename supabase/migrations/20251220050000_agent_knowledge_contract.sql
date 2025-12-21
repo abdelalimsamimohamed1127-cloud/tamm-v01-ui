@@ -59,7 +59,7 @@ using (public.is_workspace_member(workspace_id));
 drop policy if exists agent_knowledge_sources_write on public.agent_knowledge_sources;
 create policy agent_knowledge_sources_write
 on public.agent_knowledge_sources
-for insert, update, delete
+for all
 using (public.is_workspace_member(workspace_id))
 with check (public.is_workspace_member(workspace_id));
 
@@ -72,7 +72,7 @@ using (public.is_workspace_member(workspace_id));
 drop policy if exists agent_knowledge_chunks_write on public.agent_knowledge_chunks;
 create policy agent_knowledge_chunks_write
 on public.agent_knowledge_chunks
-for insert, update, delete
+for all
 using (public.is_workspace_member(workspace_id))
 with check (public.is_workspace_member(workspace_id));
 

@@ -118,9 +118,12 @@ using (public.is_admin() or public.is_workspace_member(workspace_id));
 drop policy if exists subscriptions_admin_write on public.subscriptions;
 create policy subscriptions_admin_write
 on public.subscriptions
-for insert, update, delete
+for all
 using (public.is_admin())
 with check (public.is_admin());
+drop policy if exists subscriptions_admin_write on public.subscriptions;
+alter table public.audit_logs
+add column if not exists workspace_id uuid references public.workspaces(id) on delete cascade;
 
 -- Policies: audit_logs
 drop policy if exists audit_logs_select on public.audit_logs;
