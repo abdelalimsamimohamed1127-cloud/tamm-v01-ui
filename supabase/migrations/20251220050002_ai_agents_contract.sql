@@ -35,19 +35,27 @@ update public.agents set language = 'en' where language is null;
 update public.agents set system_prompt = '' where system_prompt is null;
 update public.agents set is_active = true where is_active is null;
 
+-- Safely migrate legacy rules_jsonb (if exists) into rules (jsonb only)
 do $$
 begin
   if exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'agents' and column_name = 'rules_jsonb'
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'agents'
+      and column_name = 'rules_jsonb'
   ) then
     update public.agents
-      set rules = coalesce(rules, rules_jsonb, '{}'::jsonb)
-      where rules is null or rules = '{}'::jsonb;
+    set rules = coalesce(rules, rules_jsonb, '{}'::jsonb)
+    where rules is null
+       or rules::text = '{}';
   else
-    update public.agents set rules = coalesce(rules, '{}'::jsonb) where rules is null;
+    update public.agents
+    set rules = '{}'::jsonb
+    where rules is null;
   end if;
 end $$;
+
 
 -- Enforce contract constraints
 alter table public.agents
@@ -62,7 +70,7 @@ alter table public.agents
   alter column created_at set default now(),
   alter column updated_at set default now();
 
--- Workspace relationship and uniqueness
+-- Workspace relationship
 do $$
 begin
   if not exists (
@@ -75,29 +83,33 @@ begin
   end if;
 end $$;
 
-create unique index if not exists agents_workspace_unique_idx on public.agents (workspace_id);
+create unique index if not exists agents_workspace_unique_idx
+on public.agents (workspace_id);
 
 -- updated_at trigger helper
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc
-    WHERE proname = 'set_updated_at' AND pg_function_is_visible(oid)
-  ) THEN
-    CREATE FUNCTION public.set_updated_at()
-    RETURNS TRIGGER AS $fn$
-    BEGIN
-      NEW.updated_at = now();
-      RETURN NEW;
-    END;
-    $fn$ LANGUAGE plpgsql;
-  END IF;
-END $$;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_proc
+    where proname = 'set_updated_at'
+      and pg_function_is_visible(oid)
+  ) then
+    create function public.set_updated_at()
+    returns trigger as $fn$
+    begin
+      new.updated_at = now();
+      return new;
+    end;
+    $fn$ language plpgsql;
+  end if;
+end $$;
 
 drop trigger if exists trg_agents_set_updated_at on public.agents;
 create trigger trg_agents_set_updated_at
 before update on public.agents
-for each row execute function public.set_updated_at();
+for each row
+execute function public.set_updated_at();
 
 -- Row Level Security
 alter table public.agents enable row level security;
@@ -106,27 +118,36 @@ do $$
 begin
   if not exists (
     select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'agents' and policyname = 'Agents select by workspace'
+    where schemaname = 'public'
+      and tablename = 'agents'
+      and policyname = 'Agents select by workspace'
   ) then
-    create policy "Agents select by workspace" on public.agents
+    create policy "Agents select by workspace"
+      on public.agents
       for select
       using (is_workspace_member(workspace_id));
   end if;
 
   if not exists (
     select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'agents' and policyname = 'Agents insert by workspace'
+    where schemaname = 'public'
+      and tablename = 'agents'
+      and policyname = 'Agents insert by workspace'
   ) then
-    create policy "Agents insert by workspace" on public.agents
+    create policy "Agents insert by workspace"
+      on public.agents
       for insert
       with check (is_workspace_member(workspace_id));
   end if;
 
   if not exists (
     select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'agents' and policyname = 'Agents update by workspace'
+    where schemaname = 'public'
+      and tablename = 'agents'
+      and policyname = 'Agents update by workspace'
   ) then
-    create policy "Agents update by workspace" on public.agents
+    create policy "Agents update by workspace"
+      on public.agents
       for update
       using (is_workspace_member(workspace_id))
       with check (is_workspace_member(workspace_id));
@@ -134,9 +155,12 @@ begin
 
   if not exists (
     select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'agents' and policyname = 'Agents delete by workspace'
+    where schemaname = 'public'
+      and tablename = 'agents'
+      and policyname = 'Agents delete by workspace'
   ) then
-    create policy "Agents delete by workspace" on public.agents
+    create policy "Agents delete by workspace"
+      on public.agents
       for delete
       using (is_workspace_member(workspace_id));
   end if;
