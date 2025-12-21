@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -43,13 +43,8 @@ export default function Automations() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchAutomations();
-  }, [workspace]);
-
-  async function fetchAutomations() {
-    if (!workspace) return;
-
+  const fetchAutomations = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from('automations')
       .select('*')
@@ -59,7 +54,11 @@ export default function Automations() {
       setAutomations(data as Automation[]);
     }
     setLoading(false);
-  }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void fetchAutomations();
+  }, [fetchAutomations]);
 
   const handleToggle = async (automationId: string, enabled: boolean) => {
     const { error } = await supabase

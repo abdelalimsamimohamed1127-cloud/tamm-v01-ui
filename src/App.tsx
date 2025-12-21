@@ -48,8 +48,8 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
-      <Route path="/dashboard" element={<Navigate to="/dashboard/overview" replace />} />
       <Route path="/dashboard/*" element={<Dashboard />}>
+        <Route index element={<Navigate to="overview" replace />} />
         <Route path="overview" element={<Overview />} />
         <Route path="channels" element={<Channels />} />
         <Route path="ai-agent" element={<AIAgent />} />

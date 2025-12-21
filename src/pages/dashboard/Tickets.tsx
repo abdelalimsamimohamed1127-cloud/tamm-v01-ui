@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -33,13 +33,7 @@ export default function Tickets() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    void fetchTickets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace?.id]);
-
-  async function fetchTickets() {
-    if (!workspace) return;
+  const fetchTickets = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from('tickets')
@@ -50,7 +44,11 @@ export default function Tickets() {
 
     setTickets((data ?? []) as any);
     setLoading(false);
-  }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void fetchTickets();
+  }, [fetchTickets]);
 
   async function updateStatus(id: string, status: string) {
     await supabase.from('tickets').update({ status }).eq('id', id);
