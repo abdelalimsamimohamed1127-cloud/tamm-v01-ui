@@ -1,6 +1,6 @@
 import { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Users, Building2, Bot, Activity, CreditCard, ListChecks, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, Users, Building2, Bot, Activity, CreditCard, ListChecks, ShieldAlert, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 
@@ -12,6 +12,7 @@ const nav = [
   { to: "/admin/usage", label: "Usage", icon: Activity },
   { to: "/admin/billing", label: "Billing", icon: CreditCard },
   { to: "/admin/audit", label: "Audit Logs", icon: ListChecks },
+  { to: "/admin/docs", label: "Docs", icon: BookOpen },
 ];
 
 export default function AdminLayout({ children }: PropsWithChildren) {

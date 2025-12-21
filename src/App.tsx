@@ -5,6 +5,7 @@ import Channels from "@/pages/dashboard/Channels";
 import Settings from "@/pages/dashboard/Settings";
 import AIAgent from "@/pages/dashboard/AIAgent";
 import NotFound from "@/pages/NotFound";
+import Admin from "@/pages/admin/Admin";
 
 export default function App() {
   return (
@@ -17,6 +18,9 @@ export default function App() {
         <Route path="settings" element={<Settings />} />
         <Route path="ai-agent" element={<AIAgent />} />
       </Route>
+
+      <Route path="/admin/*" element={<Admin />} />
+      <Route path="/dashboard/admin/*" element={<Admin />} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
