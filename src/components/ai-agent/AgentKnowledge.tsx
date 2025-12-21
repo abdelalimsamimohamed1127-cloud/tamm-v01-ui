@@ -78,7 +78,6 @@ export default function AgentKnowledge({
             <Button
               onClick={async () => {
                 if (!agentId) return;
-                if (!workspace?.id) return;
                 if (!file) return;
                 setUploading(true);
                 try {
@@ -92,7 +91,7 @@ export default function AgentKnowledge({
                   setFile(null);
                 }
               }}
-              disabled={disabled || uploading || !file || !workspace?.id}
+              disabled={disabled || uploading || !file}
             >
               {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Upload & Ingest
