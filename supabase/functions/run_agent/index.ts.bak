@@ -1,0 +1,250 @@
+// EDGE FUNCTION: run_agent (RAG + reply + extraction)
+  import { serve } from 'https://deno.land/std/http/server.ts';
+  import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
+  import { getSupabaseAdmin, getAuthUserId, assertWorkspaceMember } from '../_shared/supabase.ts';
+  import { getProvider } from '../_shared/llm.ts';
+
+  type Body = {
+    workspace_id: string;
+    channel_id: string;
+    conversation_id: string;
+    agent_id: string;
+    intent?: 'sales' | 'support' | 'unknown';
+    last_user_text?: string;
+  };
+
+  const HANDOFF_PATTERNS = [
+    /تحدث\s+مع\s+(فرد|حد|موظف|إنسان|بشر)/i,
+    /كلم(ني|نا)\s+(بشر|انسان|موظف)/i,
+    /talk to (a )?human/i,
+    /human agent/i,
+  ];
+
+  function shouldHandoff(userText: string) {
+    return HANDOFF_PATTERNS.some((r) => r.test(userText));
+  }
+
+  async function upsertUsageMessages(supabase: any, workspaceId: string, dir: 'in'|'out', count: number) {
+    const d = new Date();
+    const yyyymm = `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+    const col = dir === 'in' ? 'messages_in' : 'messages_out';
+    const { data } = await supabase
+      .from('usage_counters')
+      .select('id,'+col)
+      .eq('workspace_id', workspaceId)
+      .eq('period_yyyymm', yyyymm)
+      .maybeSingle();
+
+    if (!data?.id) {
+      await supabase.from('usage_counters').insert({
+        workspace_id: workspaceId,
+        period_yyyymm: yyyymm,
+        messages_in: dir === 'in' ? count : 0,
+        messages_out: dir === 'out' ? count : 0,
+      });
+    } else {
+      const patch: any = {};
+      patch[col] = (data as any)[col] + count;
+      await supabase.from('usage_counters').update(patch).eq('id', data.id);
+    }
+  }
+
+  async function extractOrder(provider: any, text: string) {
+    const sys = `Extract an order from the conversation.
+Return ONLY valid JSON matching this schema:
+{
+  "customer_name": string|null,
+  "phone": string|null,
+  "address": string|null,
+  "items": [{"name": string, "qty": number, "price": number|null}],
+  "total": number|null,
+  "has_order": boolean
+}`;
+    const out = await provider.chat([
+      { role:'system', content: sys },
+      { role:'user', content: text },
+    ], { temperature: 0, maxTokens: 400 });
+    try {
+      const j = JSON.parse(out.trim().replace(/^```json|```$/g,''));
+      if (j && j.has_order) return j;
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  async function extractTicket(provider: any, text: string) {
+    const sys = `Extract a support ticket from the conversation.
+Return ONLY valid JSON matching this schema:
+{
+  "category": "delivery"|"refund"|"quality"|"other"|null,
+  "priority": "low"|"medium"|"high"|null,
+  "notes": string|null,
+  "has_ticket": boolean
+}`;
+    const out = await provider.chat([
+      { role:'system', content: sys },
+      { role:'user', content: text },
+    ], { temperature: 0, maxTokens: 300 });
+    try {
+      const j = JSON.parse(out.trim().replace(/^```json|```$/g,''));
+      if (j && j.has_ticket) return j;
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  serve(async (req) => {
+    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+    try {
+      const body = (await req.json()) as Body;
+      const { workspace_id, channel_id, conversation_id, agent_id } = body ?? ({} as any);
+      if (!workspace_id || !channel_id || !conversation_id || !agent_id) {
+        return jsonResponse({ error: 'Missing required fields' }, 400);
+      }
+
+      const supabase = getSupabaseAdmin();
+      const userId = await getAuthUserId(req);
+      await assertWorkspaceMember(supabase, workspace_id, userId);
+
+      // Conversation state
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', conversation_id)
+        .maybeSingle();
+
+      if (!conv) return jsonResponse({ error: 'Conversation not found' }, 404);
+      if (String(conv.status) === 'handoff') {
+        return jsonResponse({ handoff: true, reply: null }, 200);
+      }
+
+      const provider = getProvider();
+
+      // Load agent + settings
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('*')
+        .eq('id', agent_id)
+        .maybeSingle();
+
+      if (!agent) return jsonResponse({ error: 'Agent not found' }, 404);
+
+      const { data: wsSettings } = await supabase
+        .from('workspace_settings')
+        .select('*')
+        .eq('workspace_id', workspace_id)
+        .maybeSingle();
+
+      // Load last messages
+      const { data: msgs } = await supabase
+        .from('channel_messages')
+        .select('direction,sender_type,message_text,created_at')
+        .eq('conversation_id', conversation_id)
+        .order('created_at', { ascending: true })
+        .limit(30);
+
+      const history = (msgs ?? []).map((m: any) => {
+        const role = m.sender_type === 'customer' ? 'user' : 'assistant';
+        return { role, content: m.message_text } as any;
+      });
+
+      const lastUserText = body.last_user_text ?? [...(msgs ?? [])].reverse().find((m:any)=>m.sender_type==='customer')?.message_text ?? '';
+      if (agent.human_handoff_enabled && shouldHandoff(lastUserText)) {
+        await supabase
+          .from('conversations')
+          .update({ status: 'handoff', handoff_reason: 'customer_request' })
+          .eq('id', conversation_id);
+        return jsonResponse({ handoff: true, reply: 'تم. هيوصلك حد من الفريق حالًا ✅', conversation_id }, 200);
+      }
+
+      // RAG retrieve
+      let ragContext = '';
+      try {
+        const [emb] = await provider.embed([lastUserText]);
+        const { data: chunks } = await supabase.rpc('match_knowledge_chunks', {
+          p_workspace_id: workspace_id,
+          p_query_embedding: emb,
+          p_top_k: 8,
+          p_filters: {},
+        });
+        const parts = (chunks ?? []).slice(0, 8).map((c: any, idx: number) => {
+          const meta = c.metadata ? JSON.stringify(c.metadata) : '{}';
+          return `[${idx+1}] ${c.content}\nMETA: ${meta}`;
+        });
+        if (parts.length) ragContext = parts.join('\n\n');
+      } catch {
+        ragContext = '';
+      }
+
+      const sysParts: string[] = [];
+      sysParts.push(`You are Tamm AI Agent for a micro-brand. Follow the brand role and rules.`);
+      sysParts.push(`Model policy: Respond ONLY as helpful assistant. Never mention internal tools.`);
+      sysParts.push(`Language policy: agent.language=${agent.language}. If auto_detect_language=true, mirror user's language (Arabic/English).`);
+      sysParts.push(`Tone: ${agent.tone}.`);
+      sysParts.push(`Role: ${agent.role}.`);
+      sysParts.push(`Human handoff: If user asks to talk to human (Arabic: "تحدث مع فرد من الفريق"), reply politely that a human will join and DO NOT continue automated replies after setting handoff.`);
+      sysParts.push(`Inventory: If inventory_substitution_enabled=true and product unavailable/unknown, suggest alternatives and ask clarifying questions. Never claim stock unless explicit in context.`);
+      if (agent.system_prompt) sysParts.push(`Brand system prompt:\n${agent.system_prompt}`);
+      if (agent.rules_jsonb) sysParts.push(`Rules (JSON): ${JSON.stringify(agent.rules_jsonb)}`);
+      if (ragContext) sysParts.push(`Knowledge base context (may include catalog/policies). Use it to answer. If not found, ask follow-up.\n\n${ragContext}`);
+
+      const reply = await provider.chat(
+        [{ role:'system', content: sysParts.join('\n\n') }, ...history],
+        { temperature: agent.temperature ?? 0.4, maxTokens: agent.max_tokens ?? 800 }
+      );
+
+      // Save outbound message
+      const { data: outMsg, error: outErr } = await supabase
+        .from('channel_messages')
+        .insert({
+          workspace_id,
+          channel_id,
+          conversation_id,
+          direction: 'out',
+          sender_type: 'ai',
+          message_text: reply,
+          raw_payload: { agent_id },
+        })
+        .select('id')
+        .maybeSingle();
+      if (outErr) throw outErr;
+
+      await upsertUsageMessages(supabase, workspace_id, 'out', 1);
+
+      // Extraction (MVP)
+      const intent = body.intent ?? 'unknown';
+      const fullTextForExtract = `USER: ${lastUserText}\nASSISTANT: ${reply}`;
+
+      if (intent === 'sales') {
+        const extracted = await extractOrder(provider, fullTextForExtract);
+        if (extracted) {
+          await supabase.from('orders').insert({
+            workspace_id,
+            channel_id,
+            conversation_id,
+            customer_name: extracted.customer_name,
+            phone: extracted.phone,
+            address: extracted.address,
+            items: extracted.items ?? [],
+            total: extracted.total,
+            status: 'pending_confirmation',
+          });
+        }
+      } else if (intent === 'support') {
+        const extracted = await extractTicket(provider, fullTextForExtract);
+        if (extracted) {
+          await supabase.from('tickets').insert({
+            workspace_id,
+            channel_id,
+            conversation_id,
+            category: extracted.category,
+            priority: extracted.priority,
+            notes: extracted.notes,
+            status: 'open',
+          });
+        }
+      }
+
+      return jsonResponse({ reply, conversation_id, message_id: outMsg?.id ?? null }, 200);
+    } catch (e) {
+      return jsonResponse({ error: String(e?.message ?? e) }, 500);
+    }
+  });
