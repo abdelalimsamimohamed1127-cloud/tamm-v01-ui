@@ -1,16 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   MessageSquare,
-  Mail,
-  Zap,
-  Slack,
-  Globe,
-  Phone,
-  Instagram,
   MessageCircle,
-  Webhook,
   BookOpen,
   X,
 } from "lucide-react";
@@ -18,14 +11,19 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useChannelDocs } from "@/hooks/useChannelDocs";
 import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
 import { useWorkspace } from "@/hooks/useWorkspace";
-import { getChannelStateForAgent, AgentChannel, AgentChannelConfig, createDefaultChannelState } from "@/services/channels";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
+import {
+  ChannelType,
+  disableChannel,
+  enableChannel,
+  getChannelsForAgent,
+} from "@/services/channels";
 
 /* =============================
    TYPES
 ============================= */
 type Channel = {
-  id: string;
+  id: ChannelType;
   title: string;
   desc: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -38,60 +36,25 @@ type Channel = {
 /* =============================
    DATA (UI ONLY)
 ============================= */
-const CHANNELS: Channel[] = [
+const CHANNEL_LIBRARY: Omit<Channel, "enabled">[] = [
   {
-    id: "widget",
-    title: "Chat Widget",
+    id: "webchat",
+    title: "Webchat",
     desc: "Add a floating chat widget to your site.",
     icon: MessageSquare,
-    agentChannel: "webchat",
   },
   {
-    id: "help",
-    title: "Help Page",
-    desc: "Standalone ChatGPT-style help page.",
-    icon: Globe,
-  },
-  {
-    id: "email",
-    title: "Email",
-    desc:
-      "Connect your agent to an email address and let it respond to messages from your customers.",
-    icon: Mail,
-    beta: true,
-  },
-  {
-    id: "zapier",
-    title: "Zapier",
-    desc: "Connect your agent with thousands of apps using Zapier.",
-    icon: Zap,
-  },
-  { id: "slack", title: "Slack", desc: "Reply in Slack.", icon: Slack },
-  {
-    id: "whatsapp",
-    title: "WhatsApp",
+    id: "whatsapp_cloud",
+    title: "WhatsApp Cloud",
     desc: "Respond to WhatsApp messages.",
-    icon: Phone,
-    agentChannel: "whatsapp_cloud",
-  },
-  {
-    id: "instagram",
-    title: "Instagram",
-    desc: "Respond to DMs.",
-    icon: Instagram,
-  },
-  {
-    id: "messenger",
-    title: "Messenger",
-    desc: "Facebook Messenger.",
     icon: MessageCircle,
     agentChannel: "facebook_messenger",
   },
   {
-    id: "api",
-    title: "API",
-    desc: "REST API access.",
-    icon: Webhook,
+    id: "facebook_messenger",
+    title: "Facebook Messenger",
+    desc: "Chat with customers on Facebook.",
+    icon: MessageCircle,
   },
 ];
 
@@ -101,9 +64,13 @@ const CHANNELS: Channel[] = [
 function ChannelCard({
   channel,
   onOpenDocs,
+  onToggle,
+  isLoading,
 }: {
   channel: Channel;
   onOpenDocs: () => void;
+  onToggle: (nextEnabled: boolean) => void;
+  isLoading: boolean;
 }) {
   const Icon = channel.icon;
 
@@ -152,8 +119,10 @@ function ChannelCard({
         <Button
           variant={channel.enabled ? "secondary" : "outline"}
           size="sm"
+          onClick={() => onToggle(!channel.enabled)}
+          disabled={isLoading}
         >
-          {channel.enabled ? "Manage" : "Subscribe to enable"}
+          {channel.enabled ? "Disable" : "Enable"}
         </Button>
       </div>
     </Card>
@@ -233,12 +202,103 @@ export default function Channels() {
   const [leftWidth, setLeftWidth] = useState(28);
   const [isDragging, setIsDragging] = useState(false);
   const [activeDoc, setActiveDoc] = useState<Channel | null>(null);
-  const [channelState, setChannelState] = useState(createDefaultChannelState());
-
   const { workspace } = useWorkspace();
+  const baseChannels = useMemo(
+    () => CHANNEL_LIBRARY.map((c) => ({ ...c, enabled: false })),
+    []
+  );
+  const [channels, setChannels] = useState<Channel[]>(baseChannels);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [loadingChannelId, setLoadingChannelId] = useState<ChannelType | null>(null);
 
   const isMobile =
     typeof window !== "undefined" && window.innerWidth < 1024;
+
+  const fetchAgentId = useCallback(async (workspaceId: string) => {
+    if (!supabase || !isSupabaseConfigured) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { data, error } = await supabase
+      .from("agents")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data?.id ?? null;
+  }, []);
+
+  const loadChannels = useCallback(
+    async (agent: string) => {
+      const rows = await getChannelsForAgent(agent);
+      const states = CHANNEL_LIBRARY.map((entry) => ({
+        ...entry,
+        enabled: rows.some(
+          (row) => row.channel === entry.id && row.is_enabled
+        ),
+      }));
+      setChannels(states);
+    },
+    []
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const bootstrap = async () => {
+      if (!workspace?.id) {
+        setChannels(baseChannels);
+        return;
+      }
+
+      try {
+        const id = await fetchAgentId(workspace.id);
+        if (!isMounted) return;
+        if (id) {
+          setAgentId(id);
+          await loadChannels(id);
+        } else {
+          setChannels(baseChannels);
+        }
+      } catch (error) {
+        console.error("Failed to load channels", error);
+        if (isMounted) setChannels(baseChannels);
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [workspace?.id, baseChannels, fetchAgentId, loadChannels]);
+
+  const handleToggle = useCallback(
+    async (channelId: ChannelType, nextEnabled: boolean) => {
+      if (!agentId) return;
+
+      setLoadingChannelId(channelId);
+      try {
+        if (nextEnabled) {
+          await enableChannel(agentId, channelId);
+        } else {
+          await disableChannel(agentId, channelId);
+        }
+        await loadChannels(agentId);
+      } catch (error) {
+        console.error(
+          `Failed to ${nextEnabled ? "enable" : "disable"} channel`,
+          error
+        );
+      } finally {
+        setLoadingChannelId(null);
+      }
+    },
+    [agentId, loadChannels]
+  );
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -325,6 +385,8 @@ export default function Channels() {
                 key={c.id}
                 channel={c}
                 onOpenDocs={() => setActiveDoc(c)}
+                onToggle={(next) => void handleToggle(c.id, next)}
+                isLoading={loadingChannelId === c.id}
               />
             ))}
           </div>

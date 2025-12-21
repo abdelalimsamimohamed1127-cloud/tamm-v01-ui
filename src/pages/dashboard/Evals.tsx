@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { supabase } from '@/integrations/supabase/client';
@@ -26,12 +26,7 @@ export default function Evals() {
   const [loading, setLoading] = useState(true);
   const [traces, setTraces] = useState<RagTrace[]>([]);
 
-  useEffect(() => {
-    void load();
-  }, [workspace?.id]);
-
-  async function load() {
-    if (!workspace) return;
+  const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from('rag_traces')
@@ -42,7 +37,11 @@ export default function Evals() {
 
     setTraces((data as any) ?? []);
     setLoading(false);
-  }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const rows = useMemo(() => traces, [traces]);
 
@@ -99,7 +98,7 @@ export default function Evals() {
                       onClick={() =>
                         void supabase.functions.invoke('submit_message_feedback', {
                           body: {
-                            workspace_id: workspace?.id,
+                            workspace_id: workspace.id,
                             conversation_id: r.conversation_id,
                             message_id: r.message_id,
                             rating: 1,
@@ -116,7 +115,7 @@ export default function Evals() {
                       onClick={() =>
                         void supabase.functions.invoke('submit_message_feedback', {
                           body: {
-                            workspace_id: workspace?.id,
+                            workspace_id: workspace.id,
                             conversation_id: r.conversation_id,
                             message_id: r.message_id,
                             rating: -1,
