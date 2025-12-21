@@ -20,8 +20,6 @@ export default function Overview() {
 
   useEffect(() => {
     async function fetchStats() {
-      if (!workspace) return;
-
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
@@ -48,8 +46,8 @@ export default function Overview() {
       setLoading(false);
     }
 
-    fetchStats();
-  }, [workspace]);
+    void fetchStats();
+  }, [workspace.id]);
 
   const statCards = [
     {

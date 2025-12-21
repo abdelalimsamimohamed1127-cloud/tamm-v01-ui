@@ -1,56 +1,50 @@
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 
-type KnowledgeSourceStatus = "uploaded" | "failed" | "processing" | "ready" | string;
+export type KnowledgeSourceType = "csv" | "pdf" | "docx" | "txt" | "url" | "manual";
 
-async function fetchKnowledgeSource(sourceId: string) {
-  const { data, error } = await supabase!
-    .from("knowledge_sources")
-    .select("id, status")
-    .eq("id", sourceId)
+export type KnowledgeSource = {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  type: KnowledgeSourceType;
+  title: string;
+  status: string;
+  created_at: string;
+};
+
+export type KnowledgeSourcePayload = {
+  workspace_id: string;
+  agent_id: string;
+  type: KnowledgeSourceType;
+  title: string;
+};
+
+export async function createKnowledgeSource(payload: KnowledgeSourcePayload): Promise<KnowledgeSource> {
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error("Supabase is not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("agent_knowledge_sources")
+    .insert({ ...payload, status: "uploaded" })
+    .select()
     .single();
 
-  if (error) {
-    throw new Error(error.message || "Failed to fetch knowledge source.");
-  }
-
-  if (!data) {
-    throw new Error("Knowledge source not found.");
-  }
-
-  return data as { id: string; status: KnowledgeSourceStatus };
+  if (error) throw error;
+  return data as KnowledgeSource;
 }
 
-async function assertNoChunksExist(sourceId: string) {
-  const { count, error } = await supabase!
-    .from("knowledge_chunks")
-    .select("id", { count: "exact", head: true })
-    .eq("source_id", sourceId);
-
-  if (error) {
-    throw new Error(error.message || "Failed to verify knowledge chunks.");
-  }
-
-  if ((count ?? 0) > 0) {
-    throw new Error("Cannot delete knowledge source because chunks exist for this source.");
-  }
-}
-
-export async function deleteKnowledgeSource(sourceId: string) {
+export async function getKnowledgeSourcesForAgent(agentId: string): Promise<KnowledgeSource[]> {
   if (!supabase || !isSupabaseConfigured) {
-    throw new Error("Supabase client is not configured.");
+    throw new Error("Supabase is not configured");
   }
 
-  const source = await fetchKnowledgeSource(sourceId);
+  const { data, error } = await supabase
+    .from("agent_knowledge_sources")
+    .select("*")
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: false });
 
-  const allowedStatuses: KnowledgeSourceStatus[] = ["uploaded", "failed"];
-  if (!allowedStatuses.includes(source.status)) {
-    throw new Error(`Knowledge source cannot be deleted while status is "${source.status}".`);
-  }
-
-  await assertNoChunksExist(sourceId);
-
-  const { error } = await supabase.from("knowledge_sources").delete().eq("id", sourceId);
-  if (error) {
-    throw new Error(error.message || "Failed to delete knowledge source.");
-  }
+  if (error) throw error;
+  return (data ?? []) as KnowledgeSource[];
 }

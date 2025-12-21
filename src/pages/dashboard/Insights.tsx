@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,12 +19,7 @@ export default function Insights() {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<InsightReport[]>([]);
 
-  useEffect(() => {
-    void load();
-  }, [workspace?.id]);
-
-  async function load() {
-    if (!workspace) return;
+  const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from('insight_reports')
@@ -35,10 +30,13 @@ export default function Insights() {
 
     setReports((data as any) ?? []);
     setLoading(false);
-  }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function generateNow() {
-    if (!workspace) return;
     setLoading(true);
     await supabase.functions.invoke('generate_weekly_insights', {
       body: { workspace_id: workspace.id },

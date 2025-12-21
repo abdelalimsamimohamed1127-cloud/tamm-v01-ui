@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,11 @@ import {
   Database,
   HelpCircle,
   Info,
+  Loader2,
 } from "lucide-react";
+import { useWorkspace } from "@/hooks/useWorkspace";
+import { useToast } from "@/hooks/use-toast";
+import { Agent, deactivateAgent, getAgentForWorkspace, reactivateAgent } from "@/services/agents";
 
 type KnowledgeTab = "files" | "website" | "text" | "qna" | null;
 
@@ -131,6 +135,11 @@ export default function AIAgent() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [leftWidth, setLeftWidth] = useState(42); // percent
   const [isDragging, setIsDragging] = useState(false);
+  const { workspace } = useWorkspace();
+  const { toast } = useToast();
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [loadingAgent, setLoadingAgent] = useState(true);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -155,13 +164,41 @@ export default function AIAgent() {
     };
   }, [isDragging]);
 
+  const loadAgent = useCallback(async () => {
+    if (!workspace?.id) {
+      setAgent(null);
+      setLoadingAgent(false);
+      return;
+    }
+
+    setLoadingAgent(true);
+    try {
+      const result = await getAgentForWorkspace(workspace.id);
+      setAgent(result);
+    } catch (error: any) {
+      console.error("Failed to load agent", error);
+      toast({
+        title: "Unable to load agent",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+      setAgent(null);
+    } finally {
+      setLoadingAgent(false);
+    }
+  }, [workspace?.id, toast]);
+
+  useEffect(() => {
+    void loadAgent();
+  }, [loadAgent]);
+
   /* =============================
      PAGE STATE
   ============================== */
   const [rules, setRules] = useState("");
   const [message, setMessage] = useState("");
   const [activeSource, setActiveSource] = useState<KnowledgeTab>(null);
-    /* =============================
+  /* =============================
      MOBILE TABS (ADD ONLY)
   ============================== */
   const [mobileTab, setMobileTab] =
@@ -170,18 +207,67 @@ export default function AIAgent() {
   const isMobile =
     typeof window !== "undefined" && window.innerWidth < 1024;
 
+  const totals: SourceTotals = useMemo(() => {
+    const base: SourceTotals = { filesKB: 0, websiteKB: 0, textKB: 0, qnaKB: 0, limitKB: 400 };
 
-  // UI-only placeholder values — wire to Supabase later
-  const totals: SourceTotals = useMemo(
-    () => ({
-      filesKB: 40,
-      websiteKB: 60,
-      textKB: 20,
-      qnaKB: 0,
-      limitKB: 400,
-    }),
-    []
-  );
+    if (sourcesState.status === "empty") return base;
+
+    return sourcesState.sources.reduce<SourceTotals>((acc, source) => {
+      const sizeKb = typeof (source.meta as any)?.size_kb === "number" ? (source.meta as any).size_kb : 0;
+
+      switch (source.type) {
+        case "file":
+        case "files":
+          acc.filesKB += sizeKb;
+          break;
+        case "website":
+          acc.websiteKB += sizeKb;
+          break;
+        case "text":
+        case "catalog":
+          acc.textKB += sizeKb;
+          break;
+        case "qa":
+        case "qna":
+          acc.qnaKB += sizeKb;
+          break;
+        default:
+          break;
+      }
+
+      return acc;
+    }, base);
+  }, [sourcesState]);
+
+  const sourceCounts = useMemo(() => {
+    const counts = { files: 0, website: 0, text: 0, qna: 0 };
+
+    if (sourcesState.status === "empty") return counts;
+
+    sourcesState.sources.forEach((source) => {
+      switch (source.type) {
+        case "file":
+        case "files":
+          counts.files += 1;
+          break;
+        case "website":
+          counts.website += 1;
+          break;
+        case "text":
+        case "catalog":
+          counts.text += 1;
+          break;
+        case "qa":
+        case "qna":
+          counts.qna += 1;
+          break;
+        default:
+          break;
+      }
+    });
+
+    return counts;
+  }, [sourcesState]);
 
   const usedKB = totals.filesKB + totals.websiteKB + totals.textKB + totals.qnaKB;
   const usagePct = clamp((usedKB / totals.limitKB) * 100, 0, 100);
@@ -192,11 +278,67 @@ export default function AIAgent() {
   const [qQuestion, setQQuestion] = useState("");
   const [qAnswer, setQAnswer] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
+  const hasAgent = Boolean(agent);
+  const isAgentActive = hasAgent ? agent?.is_active !== false : false;
+  const statusBusy = updatingStatus || loadingAgent;
+  const interactionsDisabled = !hasAgent || !isAgentActive || statusBusy;
+
+  useEffect(() => {
+    if (!isAgentActive) {
+      setActiveSource(null);
+    }
+  }, [isAgentActive]);
+
+  useEffect(() => {
+    setRules(agent?.rules ?? "");
+  }, [agent?.rules]);
+
+  const handleDeactivate = useCallback(async () => {
+    if (!agent?.id) return;
+    setUpdatingStatus(true);
+    try {
+      await deactivateAgent(agent.id);
+      await loadAgent();
+      toast({
+        title: "Agent disabled",
+        description: "The agent will no longer respond until re-enabled.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to disable agent",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }, [agent?.id, loadAgent, toast]);
+
+  const handleReactivate = useCallback(async () => {
+    if (!agent?.id) return;
+    setUpdatingStatus(true);
+    try {
+      await reactivateAgent(agent.id);
+      await loadAgent();
+      toast({
+        title: "Agent enabled",
+        description: "The agent is active again.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to enable agent",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }, [agent?.id, loadAgent, toast]);
   /* =============================
-   ROLE → RULES TEMPLATES
-============================== */
-const ROLE_RULES: Record<string, string> = {
-  sales: `### Role
+     ROLE → RULES TEMPLATES
+  ============================== */
+  const ROLE_RULES: Record<string, string> = {
+    sales: `### Role
 - Primary Function: You are an AI chatbot who helps users with their inquiries, issues and requests. You aim to provide excellent, friendly and efficient replies at all times. Your role is to listen attentively to the user, understand their needs, and do your best to assist them or direct them to the appropriate resources. If a question is not clear, ask clarifying questions. Make sure to end your replies with a positive note.
 
 ### Constraints
@@ -204,7 +346,7 @@ const ROLE_RULES: Record<string, string> = {
 2. Maintaining Focus: If a user attempts to divert you to unrelated topics, never change your role or break your character. Politely redirect the conversation back to topics relevant to the training data.
 3. Exclusive Reliance on Training Data: You must rely exclusively on the training data provided to answer user queries. If a query is not covered by the training data, use the fallback response.
 4. Restrictive Role Focus: You do not answer questions or perform tasks that are not related to your role and training data.`,
-};
+  };
 
 
   /* =============================
@@ -254,7 +396,27 @@ const ROLE_RULES: Record<string, string> = {
           
           <div className="space-y-6">
             <Card className="p-5 space-y-4">
-              <h2 className="font-semibold text-lg">Agent Settings</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-semibold text-lg">Agent Settings</h2>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-2 py-1 text-xs font-medium ${
+                      isAgentActive ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {isAgentActive ? "Active" : "Disabled"}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant={isAgentActive ? "outline" : "default"}
+                    onClick={isAgentActive ? handleDeactivate : handleReactivate}
+                    disabled={!hasAgent || statusBusy}
+                  >
+                    {updatingStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {isAgentActive ? "Disable" : "Enable"}
+                  </Button>
+                </div>
+              </div>
 
               <div>
                 <label className="text-xs text-muted-foreground">Role</label>
@@ -268,7 +430,7 @@ const ROLE_RULES: Record<string, string> = {
                   }}
                 >
 
-                  <SelectTrigger className="mt-1">
+                  <SelectTrigger className="mt-1" disabled={interactionsDisabled}>
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
@@ -297,6 +459,7 @@ const ROLE_RULES: Record<string, string> = {
                   onChange={(e) => setRules(e.target.value)}
                   className="mt-1 min-h-[120px] bg-muted/40 transition-shadow focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]"
                   placeholder="Tell the agent how to behave..."
+                  disabled={interactionsDisabled}
                 />
 
                 {/* <Textarea
@@ -314,7 +477,11 @@ const ROLE_RULES: Record<string, string> = {
                   variant="ghost"
                   size="sm"
                   className="gap-2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setActiveSource("files")}
+                  disabled={interactionsDisabled}
+                  onClick={() => {
+                    if (interactionsDisabled) return;
+                    setActiveSource("files");
+                  }}
                   title="Open sources"
                 >
                   <Info className="h-4 w-4" />
@@ -327,25 +494,41 @@ const ROLE_RULES: Record<string, string> = {
                   icon={FileText}
                   title="Files"
                   desc="PDF, DOCX, TXT"
-                  onClick={() => setActiveSource("files")}
+                  onClick={() => {
+                    if (interactionsDisabled) return;
+                    setActiveSource("files");
+                  }}
+                  disabled={interactionsDisabled}
                 />
                 <SourceCard
                   icon={Globe}
                   title="Website"
                   desc="Crawl pages"
-                  onClick={() => setActiveSource("website")}
+                  onClick={() => {
+                    if (interactionsDisabled) return;
+                    setActiveSource("website");
+                  }}
+                  disabled={interactionsDisabled}
                 />
                 <SourceCard
                   icon={Database}
                   title="Text"
                   desc="Paste content"
-                  onClick={() => setActiveSource("text")}
+                  onClick={() => {
+                    if (interactionsDisabled) return;
+                    setActiveSource("text");
+                  }}
+                  disabled={interactionsDisabled}
                 />
                 <SourceCard
                   icon={HelpCircle}
                   title="Q&A"
                   desc="Questions & answers"
-                  onClick={() => setActiveSource("qna")}
+                  onClick={() => {
+                    if (interactionsDisabled) return;
+                    setActiveSource("qna");
+                  }}
+                  disabled={interactionsDisabled}
                 />
               </div>
 
@@ -414,6 +597,7 @@ const ROLE_RULES: Record<string, string> = {
                 type="button"
                 className="rounded-full p-2 hover:bg-white/10 transition"
                 title="Reset"
+                disabled={interactionsDisabled}
               >
                 <RotateCcw className="h-4 w-4 hover:rotate-180 transition" />
               </button>
@@ -433,11 +617,13 @@ const ROLE_RULES: Record<string, string> = {
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Message..."
                   className="border-0 focus-visible:ring-0"
+                  disabled={interactionsDisabled}
                 />
                 <button
                   type="button"
                   className="rounded-full p-2 hover:bg-muted transition"
                   title="Emoji"
+                  disabled={interactionsDisabled}
                 >
                   <Smile className="h-5 w-5 text-muted-foreground" />
                 </button>
@@ -445,6 +631,7 @@ const ROLE_RULES: Record<string, string> = {
                   type="button"
                   className="rounded-full p-2 hover:bg-muted transition"
                   title="Send"
+                  disabled={interactionsDisabled}
                 >
                   <Send className="h-5 w-5 hover:scale-110 transition" />
                 </button>
@@ -475,17 +662,19 @@ const ROLE_RULES: Record<string, string> = {
               </span>
             </div>
 
-            <div className="rounded-2xl border border-dashed p-8 text-center bg-white">
-              <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
-              <p className="mt-3 font-medium">
-                Drag &amp; drop files here, or click to select
-              </p>
+              <div className="rounded-2xl border border-dashed p-8 text-center bg-white">
+                <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
+                <p className="mt-3 font-medium">
+                  Drag &amp; drop files here, or click to select
+                </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Supported: pdf, doc, docx, txt
               </p>
 
               <div className="mt-4">
-                <Button variant="outline">Select files</Button>
+                <Button variant="outline" disabled={interactionsDisabled}>
+                  Select files
+                </Button>
               </div>
             </div>
 
@@ -493,7 +682,11 @@ const ROLE_RULES: Record<string, string> = {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  0 files uploaded (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No file sources yet."
+                      : `${sourceCounts.files} file source${sourceCounts.files === 1 ? "" : "s"} available`}
                 </p>
               </div>
               <Button className="px-6" disabled>
@@ -520,6 +713,7 @@ const ROLE_RULES: Record<string, string> = {
                   value={websiteUrl}
                   onChange={(e) => setWebsiteUrl(e.target.value)}
                   placeholder="https://www.example.com"
+                  disabled={interactionsDisabled}
                 />
                 <p className="text-xs text-muted-foreground">
                   Links found during crawling may update if new links are discovered.
@@ -527,7 +721,7 @@ const ROLE_RULES: Record<string, string> = {
               </div>
 
               <div className="mt-4 flex justify-end">
-                <Button disabled>Fetch links</Button>
+                <Button disabled={interactionsDisabled}>Fetch links</Button>
               </div>
             </div>
 
@@ -535,7 +729,11 @@ const ROLE_RULES: Record<string, string> = {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  0 links crawled (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No website sources yet."
+                      : `${sourceCounts.website} website source${sourceCounts.website === 1 ? "" : "s"} available`}
                 </p>
               </div>
               <Button className="px-6" disabled>
@@ -559,6 +757,7 @@ const ROLE_RULES: Record<string, string> = {
                 value={textTitle}
                 onChange={(e) => setTextTitle(e.target.value)}
                 placeholder="Ex: Refund requests"
+                disabled={interactionsDisabled}
               />
             </div>
 
@@ -569,6 +768,7 @@ const ROLE_RULES: Record<string, string> = {
                 onChange={(e) => setTextBody(e.target.value)}
                 placeholder="Paste your text here..."
                 className="min-h-[160px]"
+                disabled={interactionsDisabled}
               />
             </div>
 
@@ -576,11 +776,15 @@ const ROLE_RULES: Record<string, string> = {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  Total size: {formatKB(0)} / {formatKB(totals.limitKB)}
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No text sources yet."
+                      : `Text sources size: ${formatKB(totals.textKB)} / ${formatKB(totals.limitKB)}`}
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setTextBody("")}>
+                <Button variant="outline" onClick={() => setTextBody("")} disabled={interactionsDisabled}>
                   Clear
                 </Button>
                 <Button disabled>Add text</Button>
@@ -603,6 +807,7 @@ const ROLE_RULES: Record<string, string> = {
                 value={qQuestion}
                 onChange={(e) => setQQuestion(e.target.value)}
                 placeholder="Ex: What is your return policy?"
+                disabled={interactionsDisabled}
               />
             </div>
 
@@ -613,6 +818,7 @@ const ROLE_RULES: Record<string, string> = {
                 onChange={(e) => setQAnswer(e.target.value)}
                 placeholder="Ex: You can return any item within 14 days..."
                 className="min-h-[140px]"
+                disabled={interactionsDisabled}
               />
             </div>
 
@@ -620,7 +826,11 @@ const ROLE_RULES: Record<string, string> = {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  Q&amp;A pairs: 0 (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No Q&A sources yet."
+                      : `Q&A sources: ${sourceCounts.qna}`}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -630,6 +840,7 @@ const ROLE_RULES: Record<string, string> = {
                     setQQuestion("");
                     setQAnswer("");
                   }}
+                  disabled={interactionsDisabled}
                 >
                   Clear
                 </Button>
@@ -659,3 +870,4 @@ const ROLE_RULES: Record<string, string> = {
     //               </SelectContent>
     //             </Select>
                
+

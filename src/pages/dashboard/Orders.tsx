@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -31,13 +31,8 @@ export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchOrders();
-  }, [workspace]);
-
-  async function fetchOrders() {
-    if (!workspace) return;
-
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from('orders')
       .select('*')
@@ -48,7 +43,11 @@ export default function Orders() {
       setOrders(data);
     }
     setLoading(false);
-  }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void fetchOrders();
+  }, [fetchOrders]);
 
   const getStatusBadge = (status: string | null) => {
     switch (status) {

@@ -36,7 +36,6 @@ export default function Analytics() {
   const limits = PLAN_LIMITS[tier];
 
   useEffect(() => {
-    if (!workspace) return;
     let active = true;
 
     (async () => {
@@ -63,7 +62,7 @@ export default function Analytics() {
     return () => {
       active = false;
     };
-  }, [workspace, period]);
+  }, [workspace.id, period]);
 
   const metrics = useMemo(() => {
     const u = usage ?? {
@@ -93,21 +92,20 @@ export default function Analytics() {
     return Math.min(100, Math.round((v / max) * 100));
   };
 
-async function refreshUsage() {
-  if (!workspace) return;
-  setRefreshing(true);
-  const { data, error } = await supabase.functions.invoke('recompute_usage', {
-    body: { workspace_id: workspace.id, period_yyyymm: period },
-  });
-  setRefreshing(false);
-  if (error) {
-    toast({ title: 'Usage', description: error.message, variant: 'destructive' });
-    return;
+  async function refreshUsage() {
+    setRefreshing(true);
+    const { data, error } = await supabase.functions.invoke('recompute_usage', {
+      body: { workspace_id: workspace.id, period_yyyymm: period },
+    });
+    setRefreshing(false);
+    if (error) {
+      toast({ title: 'Usage', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (data?.usage) setUsage(data.usage as any);
+    if (data?.tier) setTier(normalizePlanTier(data.tier) as any);
+    toast({ title: 'Usage refreshed', description: 'Counts were recomputed from DB.' });
   }
-  if (data?.usage) setUsage(data.usage as any);
-  if (data?.tier) setTier(normalizePlanTier(data.tier) as any);
-  toast({ title: 'Usage refreshed', description: 'Counts were recomputed from DB.' });
-}
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">

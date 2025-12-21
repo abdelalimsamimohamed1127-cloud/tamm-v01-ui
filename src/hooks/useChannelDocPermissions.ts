@@ -17,7 +17,7 @@ export function useChannelDocPermissions(channelKey: string | null) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!workspace || !channelKey) {
+    if (!channelKey) {
       setPermissions([]);
       setLanguagePermissions([]);
       return;
@@ -36,7 +36,7 @@ export function useChannelDocPermissions(channelKey: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [workspace, channelKey]);
+  }, [workspace.id, channelKey]);
 
   useEffect(() => {
     load();
