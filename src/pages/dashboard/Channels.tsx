@@ -17,6 +17,9 @@ import {
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useChannelDocs } from "@/hooks/useChannelDocs";
 import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
+import { useWorkspace } from "@/hooks/useWorkspace";
+import { getChannelStateForAgent, AgentChannel, AgentChannelConfig, createDefaultChannelState } from "@/services/channels";
+import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 
 /* =============================
    TYPES
@@ -28,6 +31,8 @@ type Channel = {
   icon: React.ComponentType<{ className?: string }>;
   enabled?: boolean;
   beta?: boolean;
+  agentChannel?: AgentChannel;
+  config?: AgentChannelConfig;
 };
 
 /* =============================
@@ -39,7 +44,7 @@ const CHANNELS: Channel[] = [
     title: "Chat Widget",
     desc: "Add a floating chat widget to your site.",
     icon: MessageSquare,
-    enabled: true,
+    agentChannel: "webchat",
   },
   {
     id: "help",
@@ -67,6 +72,7 @@ const CHANNELS: Channel[] = [
     title: "WhatsApp",
     desc: "Respond to WhatsApp messages.",
     icon: Phone,
+    agentChannel: "whatsapp_cloud",
   },
   {
     id: "instagram",
@@ -79,6 +85,7 @@ const CHANNELS: Channel[] = [
     title: "Messenger",
     desc: "Facebook Messenger.",
     icon: MessageCircle,
+    agentChannel: "facebook_messenger",
   },
   {
     id: "api",
@@ -226,6 +233,9 @@ export default function Channels() {
   const [leftWidth, setLeftWidth] = useState(28);
   const [isDragging, setIsDragging] = useState(false);
   const [activeDoc, setActiveDoc] = useState<Channel | null>(null);
+  const [channelState, setChannelState] = useState(createDefaultChannelState());
+
+  const { workspace } = useWorkspace();
 
   const isMobile =
     typeof window !== "undefined" && window.innerWidth < 1024;
@@ -247,6 +257,50 @@ export default function Channels() {
     };
   }, [isDragging]);
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function load() {
+      if (!workspace || !supabase || !isSupabaseConfigured) {
+        if (!ignore) setChannelState(createDefaultChannelState());
+        return;
+      }
+
+      const { data: agentRow, error } = await supabase
+        .from("agents")
+        .select("id")
+        .eq("workspace_id", workspace.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        if (!ignore) setChannelState(createDefaultChannelState());
+        return;
+      }
+
+      const state = await getChannelStateForAgent(agentRow?.id);
+      if (!ignore) setChannelState(state);
+    }
+
+    load();
+
+    return () => {
+      ignore = true;
+    };
+  }, [workspace]);
+
+  const channels = CHANNELS.map((c) => {
+    const state = c.agentChannel
+      ? channelState.channels.find((ch) => ch.channel === c.agentChannel)
+      : null;
+    return {
+      ...c,
+      enabled: state?.is_enabled ?? c.enabled ?? false,
+      config: state?.config ?? c.config,
+    };
+  });
+
   return (
     <div ref={containerRef} className="w-full p-6">
       <div className="flex h-[calc(100vh-120px)] overflow-hidden">
@@ -266,7 +320,7 @@ export default function Channels() {
           <h2 className="mb-4 text-lg font-semibold">All channels</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {CHANNELS.map((c) => (
+            {channels.map((c) => (
               <ChannelCard
                 key={c.id}
                 channel={c}
