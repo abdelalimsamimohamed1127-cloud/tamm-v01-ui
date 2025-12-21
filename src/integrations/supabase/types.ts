@@ -93,6 +93,41 @@ export type Database = {
           },
         ]
       }
+      agent_channels: {
+        Row: {
+          agent_id: string
+          channel: string
+          config: Json | null
+          created_at: string
+          id: string
+          is_enabled: boolean | null
+        }
+        Insert: {
+          agent_id: string
+          channel: string
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean | null
+        }
+        Update: {
+          agent_id?: string
+          channel?: string
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_channels_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channels: {
         Row: {
           connected_at: string | null
