@@ -7,6 +7,7 @@ import Agents from "./Agents";
 import Usage from "./Usage";
 import Billing from "./Billing";
 import AuditLogs from "./AuditLogs";
+import Docs from "./Docs";
 
 export default function Admin() {
   return (
@@ -20,6 +21,7 @@ export default function Admin() {
         <Route path="usage" element={<Usage />} />
         <Route path="billing" element={<Billing />} />
         <Route path="audit" element={<AuditLogs />} />
+        <Route path="docs" element={<Docs />} />
       </Routes>
     </AdminLayout>
   );

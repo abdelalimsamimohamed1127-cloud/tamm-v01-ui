@@ -14,6 +14,9 @@ import {
   BookOpen,
   X,
 } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useChannelDocs } from "@/hooks/useChannelDocs";
+import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
 
 /* =============================
    TYPES
@@ -161,6 +164,8 @@ function DocumentationDrawer({
   onClose: () => void;
 }) {
   const Icon = channel.icon;
+  const { language } = useLanguage();
+  const { doc, isLoading } = useChannelDocs(channel.id, language);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -181,16 +186,32 @@ function DocumentationDrawer({
         </div>
 
         <div className="p-4 text-sm space-y-4">
-          <p className="text-muted-foreground">
-            Documentation placeholder.
-          </p>
-          <div className="rounded-lg border p-3 bg-muted/40">
-            <ul className="list-disc pl-4 space-y-1">
-              <li>Setup instructions</li>
-              <li>Permissions</li>
-              <li>Testing</li>
-            </ul>
-          </div>
+          {isLoading ? (
+            <p className="text-muted-foreground">Loading documentation...</p>
+          ) : doc ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                {doc.lang_code} • v{doc.version}
+              </p>
+              <h4 className="font-semibold text-base">{doc.title || `${channel.title} Docs`}</h4>
+              <div className="rounded-lg border p-3 bg-muted/40">
+                <MarkdownViewer content={doc.content_md} />
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                Documentation placeholder.
+              </p>
+              <div className="rounded-lg border p-3 bg-muted/40">
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Setup instructions</li>
+                  <li>Permissions</li>
+                  <li>Testing</li>
+                </ul>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
