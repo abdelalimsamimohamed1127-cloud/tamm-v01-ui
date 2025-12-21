@@ -1,6 +1,6 @@
-# Tamm — AI Social Commerce Copilot (ZIP 8 Final)
+# Tamm — AI
 
-This repository is the **final merged** version (ZIP 1 → ZIP 7) for:
+This repository is the **final merged** for:
 - **Core runtime** (agents, channels, conversations, messages)
 - **Webchat** channel end-to-end (ingestion → AI reply → handoff hard stop)
 - **RAG** (PDF/DOCX/CSV/TXT ingest + pgvector retrieval)
@@ -207,20 +207,6 @@ npm test
 supabase db push
 ```
 
-This adds:
-- `rag_traces`, `cost_events`, `message_feedback`
-- `insight_reports`
-- `automation_rules`, `automation_runs`
-- Inbox helper tables (`conversation_tags`, `conversation_assignments`, `conversation_sla`) + extra conversation columns
-
-## 2) Deploy new functions
-
-```bash
-supabase functions deploy submit_message_feedback
-supabase functions deploy generate_weekly_insights
-# run_agent was updated (deploy again)
-supabase functions deploy run_agent
-```
 
 ## 3) UI pages
 
