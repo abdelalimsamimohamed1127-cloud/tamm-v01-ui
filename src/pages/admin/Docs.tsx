@@ -57,7 +57,7 @@ export default function AdminDocs() {
 
   useEffect(() => {
     async function loadLatest() {
-      if (!workspace || !channelKey || !langCode) return;
+      if (!channelKey || !langCode) return;
       const latest = await fetchLatestChannelDocVersion(workspace.id, channelKey, langCode);
       if (latest) {
         setTitle(latest.title ?? "");
@@ -68,25 +68,25 @@ export default function AdminDocs() {
       }
     }
     loadLatest();
-  }, [workspace, channelKey, langCode]);
+  }, [workspace.id, channelKey, langCode]);
 
   useEffect(() => {
     async function loadVersions() {
-      if (!workspace || !channelKey) return;
+      if (!channelKey) return;
       const data = await fetchDocVersions(workspace.id, channelKey, langCode);
       setVersions(data);
     }
     loadVersions();
-  }, [workspace, channelKey, langCode]);
+  }, [workspace.id, channelKey, langCode]);
 
   useEffect(() => {
     async function loadAudit() {
-      if (!workspace || !channelKey) return;
+      if (!channelKey) return;
       const data = await fetchChannelDocAuditLogs(workspace.id, channelKey, 20);
       setAuditLogs(data);
     }
     loadAudit();
-  }, [workspace, channelKey]);
+  }, [workspace.id, channelKey]);
 
   useEffect(() => {
     if (!languages.find((l) => l.lang_code === langCode)) {
@@ -96,7 +96,6 @@ export default function AdminDocs() {
   }, [langCode, languages, addLanguage, refreshLanguages]);
 
   const handleSave = async (status: "draft" | "published") => {
-    if (!workspace) return;
     setSaving(true);
     try {
       await createChannelDocVersion({
@@ -117,7 +116,6 @@ export default function AdminDocs() {
   };
 
   const togglePermission = async (role: string, field: "can_read" | "can_write", next: boolean) => {
-    if (!workspace) return;
     const current: ChannelPermission =
       permissions.find((p) => p.role === role) ??
       ({
@@ -131,7 +129,6 @@ export default function AdminDocs() {
   };
 
   const toggleLanguagePermission = async (role: string, field: "can_read" | "can_write", next: boolean) => {
-    if (!workspace) return;
     const current: ChannelLanguagePermission =
       languagePermissions.find((p) => p.role === role && p.lang_code === langCode) ??
       ({
@@ -151,10 +148,6 @@ export default function AdminDocs() {
 
   if (!isAdmin) {
     return <NotAuthorized />;
-  }
-
-  if (!workspace) {
-    return <div className="p-6">No workspace found.</div>;
   }
 
   return (

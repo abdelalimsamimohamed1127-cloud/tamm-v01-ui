@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -55,37 +55,16 @@ export default function Inbox() {
     [conversations, selectedConversation]
   );
 
-  useEffect(() => {
-    if (!workspace) return;
-    void loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace?.id]);
-
-  useEffect(() => {
-    if (!selectedConversation || !workspace) return;
-    void fetchMessages(selectedConversation);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversation]);
-
-  async function loadAll() {
-    if (!workspace || !isSupabaseConfigured) return;
-    setLoading(true);
-    await Promise.all([fetchChannels(), fetchConversations()]);
-    setLoading(false);
-  }
-
-  async function fetchChannels() {
-    if (!workspace) return;
+  const fetchChannels = useCallback(async () => {
     const { data } = await supabase
       .from('channels')
       .select('id,name,type')
       .eq('workspace_id', workspace.id)
       .order('created_at', { ascending: true });
     setChannels((data ?? []) as any);
-  }
+  }, [workspace.id]);
 
-  async function fetchConversations() {
-    if (!workspace) return;
+  const fetchConversations = useCallback(async () => {
     const q = supabase
       .from('conversations')
       .select('id,channel_id,external_user_id,status,updated_at,channels(name,type)')
@@ -103,23 +82,41 @@ export default function Inbox() {
     if (!selectedConversation && (data ?? []).length > 0) {
       setSelectedConversation((data ?? [])[0].id);
     }
-  }
+  }, [workspace.id, selectedChannel, selectedConversation]);
 
-  async function fetchMessages(conversationId: string) {
-    if (!workspace) return;
-    const { data } = await supabase
-      .from('channel_messages')
-      .select('id,direction,sender_type,message_text,is_draft,created_at')
-      .eq('workspace_id', workspace.id)
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .limit(500);
+  const fetchMessages = useCallback(
+    async (conversationId: string) => {
+      const { data } = await supabase
+        .from('channel_messages')
+        .select('id,direction,sender_type,message_text,is_draft,created_at')
+        .eq('workspace_id', workspace.id)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(500);
 
-    setMessages((data ?? []) as any);
-  }
+      setMessages((data ?? []) as any);
+    },
+    [workspace.id]
+  );
+
+  const loadAll = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    setLoading(true);
+    await Promise.all([fetchChannels(), fetchConversations()]);
+    setLoading(false);
+  }, [isSupabaseConfigured, fetchChannels, fetchConversations]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    if (!selectedConversation) return;
+    void fetchMessages(selectedConversation);
+  }, [selectedConversation, fetchMessages]);
 
   async function sendHumanMessage() {
-    if (!workspace || !selectedConversationRow) return;
+    if (!selectedConversationRow) return;
     if (!newMessage.trim()) return;
 
     await supabase.from('channel_messages').insert({
@@ -139,7 +136,7 @@ export default function Inbox() {
   }
 
   async function requestHandoff() {
-    if (!workspace || !selectedConversationRow) return;
+    if (!selectedConversationRow) return;
     await supabase.functions.invoke('request_handoff', {
       body: {
         workspace_id: workspace.id,
@@ -152,7 +149,7 @@ export default function Inbox() {
   }
 
   async function releaseHandoff() {
-    if (!workspace || !selectedConversationRow) return;
+    if (!selectedConversationRow) return;
     await supabase.functions.invoke('release_handoff', {
       body: {
         workspace_id: workspace.id,
@@ -164,7 +161,6 @@ export default function Inbox() {
   }
 
   async function sendDraft(draftMessageId: string) {
-    if (!workspace) return;
     await supabase.functions.invoke('send_draft_message', {
       body: { workspace_id: workspace.id, draft_message_id: draftMessageId },
     });
@@ -172,7 +168,7 @@ export default function Inbox() {
   }
 
   async function generateDraft() {
-    if (!workspace || !selectedConversationRow) return;
+    if (!selectedConversationRow) return;
     await supabase.functions.invoke('generate_draft', {
       body: {
         workspace_id: workspace.id,
