@@ -29,6 +29,8 @@ type Channel = {
   icon: React.ComponentType<{ className?: string }>;
   enabled?: boolean;
   beta?: boolean;
+  agentChannel?: AgentChannel;
+  config?: AgentChannelConfig;
 };
 
 /* =============================
@@ -46,6 +48,7 @@ const CHANNEL_LIBRARY: Omit<Channel, "enabled">[] = [
     title: "WhatsApp Cloud",
     desc: "Respond to WhatsApp messages.",
     icon: MessageCircle,
+    agentChannel: "facebook_messenger",
   },
   {
     id: "facebook_messenger",
@@ -313,6 +316,50 @@ export default function Channels() {
       window.removeEventListener("mouseup", onUp);
     };
   }, [isDragging]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function load() {
+      if (!workspace || !supabase || !isSupabaseConfigured) {
+        if (!ignore) setChannelState(createDefaultChannelState());
+        return;
+      }
+
+      const { data: agentRow, error } = await supabase
+        .from("agents")
+        .select("id")
+        .eq("workspace_id", workspace.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        if (!ignore) setChannelState(createDefaultChannelState());
+        return;
+      }
+
+      const state = await getChannelStateForAgent(agentRow?.id);
+      if (!ignore) setChannelState(state);
+    }
+
+    load();
+
+    return () => {
+      ignore = true;
+    };
+  }, [workspace]);
+
+  const channels = CHANNELS.map((c) => {
+    const state = c.agentChannel
+      ? channelState.channels.find((ch) => ch.channel === c.agentChannel)
+      : null;
+    return {
+      ...c,
+      enabled: state?.is_enabled ?? c.enabled ?? false,
+      config: state?.config ?? c.config,
+    };
+  });
 
   return (
     <div ref={containerRef} className="w-full p-6">
