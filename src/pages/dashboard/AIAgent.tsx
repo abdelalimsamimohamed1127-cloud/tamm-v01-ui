@@ -207,18 +207,67 @@ export default function AIAgent() {
   const isMobile =
     typeof window !== "undefined" && window.innerWidth < 1024;
 
+  const totals: SourceTotals = useMemo(() => {
+    const base: SourceTotals = { filesKB: 0, websiteKB: 0, textKB: 0, qnaKB: 0, limitKB: 400 };
 
-  // UI-only placeholder values — wire to Supabase later
-  const totals: SourceTotals = useMemo(
-    () => ({
-      filesKB: 40,
-      websiteKB: 60,
-      textKB: 20,
-      qnaKB: 0,
-      limitKB: 400,
-    }),
-    []
-  );
+    if (sourcesState.status === "empty") return base;
+
+    return sourcesState.sources.reduce<SourceTotals>((acc, source) => {
+      const sizeKb = typeof (source.meta as any)?.size_kb === "number" ? (source.meta as any).size_kb : 0;
+
+      switch (source.type) {
+        case "file":
+        case "files":
+          acc.filesKB += sizeKb;
+          break;
+        case "website":
+          acc.websiteKB += sizeKb;
+          break;
+        case "text":
+        case "catalog":
+          acc.textKB += sizeKb;
+          break;
+        case "qa":
+        case "qna":
+          acc.qnaKB += sizeKb;
+          break;
+        default:
+          break;
+      }
+
+      return acc;
+    }, base);
+  }, [sourcesState]);
+
+  const sourceCounts = useMemo(() => {
+    const counts = { files: 0, website: 0, text: 0, qna: 0 };
+
+    if (sourcesState.status === "empty") return counts;
+
+    sourcesState.sources.forEach((source) => {
+      switch (source.type) {
+        case "file":
+        case "files":
+          counts.files += 1;
+          break;
+        case "website":
+          counts.website += 1;
+          break;
+        case "text":
+        case "catalog":
+          counts.text += 1;
+          break;
+        case "qa":
+        case "qna":
+          counts.qna += 1;
+          break;
+        default:
+          break;
+      }
+    });
+
+    return counts;
+  }, [sourcesState]);
 
   const usedKB = totals.filesKB + totals.websiteKB + totals.textKB + totals.qnaKB;
   const usagePct = clamp((usedKB / totals.limitKB) * 100, 0, 100);
@@ -633,7 +682,11 @@ export default function AIAgent() {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  0 files uploaded (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No file sources yet."
+                      : `${sourceCounts.files} file source${sourceCounts.files === 1 ? "" : "s"} available`}
                 </p>
               </div>
               <Button className="px-6" disabled>
@@ -676,7 +729,11 @@ export default function AIAgent() {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  0 links crawled (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No website sources yet."
+                      : `${sourceCounts.website} website source${sourceCounts.website === 1 ? "" : "s"} available`}
                 </p>
               </div>
               <Button className="px-6" disabled>
@@ -719,7 +776,11 @@ export default function AIAgent() {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  Total size: {formatKB(0)} / {formatKB(totals.limitKB)}
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No text sources yet."
+                      : `Text sources size: ${formatKB(totals.textKB)} / ${formatKB(totals.limitKB)}`}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -765,7 +826,11 @@ export default function AIAgent() {
               <div className="text-sm">
                 <p className="font-medium">Sources</p>
                 <p className="text-muted-foreground text-xs">
-                  Q&amp;A pairs: 0 (UI-only)
+                  {sourcesLoading
+                    ? "Loading sources..."
+                    : sourcesState.status === "empty"
+                      ? "No Q&A sources yet."
+                      : `Q&A sources: ${sourceCounts.qna}`}
                 </p>
               </div>
               <div className="flex gap-2">
