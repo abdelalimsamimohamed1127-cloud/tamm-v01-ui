@@ -1,32 +1,40 @@
-# Tamm UI — Dev Quickstart (Stage 0)
+# Tamm — Developer Setup & Contracts
 
-## Required environment
-- `VITE_SUPABASE_URL` – your Supabase project URL
-- `VITE_SUPABASE_ANON_KEY` – your Supabase anon public key
+## Project scope
+- Frontend: Vite + React + TypeScript
+- Backend: Supabase
+- Channels: Webchat, WhatsApp, Messenger
+- Stage: Platform Stabilization (Stage 0)
 
-Create a `.env.local` (or export vars in your shell) before running the app.
+## Environment variables
+- Required:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+- Forbidden on frontend: service role key, admin secrets
+- App must fail fast if configuration is missing or invalid
 
-## Install & run
+## .env.example
+```
+VITE_SUPABASE_URL=YOUR_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+## Local run
 ```bash
 npm install
 npm run dev
 ```
 
-## Supabase CLI (no secrets committed)
-```bash
-# Link to your Supabase project (prompts for access token)
-supabase link --project-ref <your-project-ref>
+## Supabase contract
+- Only anon key is used client-side
+- RLS is enforced on all data access
+- `workspace_id` is mandatory for every request
+- No direct admin access from the app
 
-# Push database migrations
-supabase db push
-
-# Deploy Edge Functions (used in later stages)
-supabase functions deploy
-```
-
-## Stage 0 smoke checklist
-- `npm run dev` starts without crashing
-- Login screen loads (auth flows work when env vars are set)
-- `/dashboard/ai-agent` loads and stays on refresh
-- `/dashboard/channels` loads and stays on refresh
-- Refreshing any `/dashboard/*` route keeps the same path
+## Smoke checklist (run before every commit)
+- App boots without errors
+- Login works
+- Workspace loads
+- `/dashboard` routes work
+- Refresh on deep route works
+- Browser console has no warnings or errors

@@ -1,72 +1,50 @@
-import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
+import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 
-export type KnowledgeStatus = "uploaded" | "processing" | "ready" | "failed";
+export type KnowledgeSourceType = "csv" | "pdf" | "docx" | "txt" | "url" | "manual";
 
-const KNOWLEDGE_STATUS_TRANSITIONS: Record<KnowledgeStatus, KnowledgeStatus[]> = {
-  uploaded: ["processing"],
-  processing: ["ready", "failed"],
-  ready: [],
-  failed: [],
+export type KnowledgeSource = {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  type: KnowledgeSourceType;
+  title: string;
+  status: string;
+  created_at: string;
 };
 
-function isKnowledgeStatus(value: string): value is KnowledgeStatus {
-  return ["uploaded", "processing", "ready", "failed"].includes(value);
-}
+export type KnowledgeSourcePayload = {
+  workspace_id: string;
+  agent_id: string;
+  type: KnowledgeSourceType;
+  title: string;
+};
 
-export function assertValidKnowledgeTransition(from: KnowledgeStatus, to: KnowledgeStatus) {
-  const allowed = KNOWLEDGE_STATUS_TRANSITIONS[from] ?? [];
-  if (!allowed.includes(to)) {
-    throw new Error(`Invalid knowledge status transition from ${from} to ${to}`);
-  }
-}
-
-async function fetchCurrentKnowledgeStatus(sourceId: string): Promise<KnowledgeStatus> {
+export async function createKnowledgeSource(payload: KnowledgeSourcePayload): Promise<KnowledgeSource> {
   if (!supabase || !isSupabaseConfigured) {
-    throw new Error("Supabase not configured");
+    throw new Error("Supabase is not configured");
   }
 
-  const { data, error } = await supabase.from("knowledge_sources").select("status").eq("id", sourceId).single();
-
-  if (error) {
-    throw error;
-  }
-
-  const status = data?.status;
-  if (!status || !isKnowledgeStatus(status)) {
-    throw new Error(`Unknown knowledge status: ${status}`);
-  }
-
-  return status;
-}
-
-async function updateKnowledgeStatus(sourceId: string, nextStatus: KnowledgeStatus, errorReason?: string) {
-  if (!supabase || !isSupabaseConfigured) {
-    throw new Error("Supabase not configured");
-  }
-
-  const currentStatus = await fetchCurrentKnowledgeStatus(sourceId);
-  assertValidKnowledgeTransition(currentStatus, nextStatus);
-
-  const { error } = await supabase
-    .from("knowledge_sources")
-    .update({ status: nextStatus, error: nextStatus === "failed" ? errorReason ?? null : null })
-    .eq("id", sourceId)
-    .select("id")
+  const { data, error } = await supabase
+    .from("agent_knowledge_sources")
+    .insert({ ...payload, status: "uploaded" })
+    .select()
     .single();
 
-  if (error) {
-    throw error;
+  if (error) throw error;
+  return data as KnowledgeSource;
+}
+
+export async function getKnowledgeSourcesForAgent(agentId: string): Promise<KnowledgeSource[]> {
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error("Supabase is not configured");
   }
-}
 
-export async function markKnowledgeProcessing(sourceId: string) {
-  await updateKnowledgeStatus(sourceId, "processing");
-}
+  const { data, error } = await supabase
+    .from("agent_knowledge_sources")
+    .select("*")
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: false });
 
-export async function markKnowledgeReady(sourceId: string) {
-  await updateKnowledgeStatus(sourceId, "ready");
-}
-
-export async function markKnowledgeFailed(sourceId: string, reason?: string) {
-  await updateKnowledgeStatus(sourceId, "failed", reason);
+  if (error) throw error;
+  return (data ?? []) as KnowledgeSource[];
 }

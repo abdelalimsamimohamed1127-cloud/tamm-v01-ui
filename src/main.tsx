@@ -4,7 +4,7 @@ import { HashRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
-import { WorkspaceProvider } from "./hooks/useWorkspace";
+import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

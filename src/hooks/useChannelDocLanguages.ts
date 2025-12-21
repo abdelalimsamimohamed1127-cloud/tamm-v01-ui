@@ -9,7 +9,7 @@ export function useChannelDocLanguages(channelKey: string | null) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!workspace || !channelKey) {
+    if (!channelKey) {
       setLanguages([]);
       return;
     }
@@ -23,7 +23,7 @@ export function useChannelDocLanguages(channelKey: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [workspace, channelKey]);
+  }, [workspace.id, channelKey]);
 
   useEffect(() => {
     load();
@@ -31,11 +31,11 @@ export function useChannelDocLanguages(channelKey: string | null) {
 
   const addLanguage = useCallback(
     async (langCode: string) => {
-      if (!workspace || !channelKey) return;
+      if (!channelKey) return;
       await addChannelDocLanguage(workspace.id, channelKey, langCode);
       await load();
     },
-    [workspace, channelKey, load]
+    [workspace.id, channelKey, load]
   );
 
   return { languages, loading, error, refresh: load, addLanguage };
