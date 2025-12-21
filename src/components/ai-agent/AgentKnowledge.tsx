@@ -4,8 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Upload, Globe, HelpCircle, FileText, Plus, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { createKnowledgeSource, KnowledgeSourceType } from "@/services/knowledge";
 
 type Source =
   | { type: "text"; payload: { text: string } }
@@ -13,31 +13,22 @@ type Source =
   | { type: "website"; payload: { url: string } }
   | { type: "files"; payload: { storage_paths: string[]; extracted_text?: string } };
 
-async function callFileIngest(params: { agent_id: string; workspace_id: string; file: File }) {
-  if (!isSupabaseConfigured || !supabase) throw new Error("Supabase is not configured");
-
-  const { data: sessionData } = await (supabase as any).auth.getSession();
-  const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Not authenticated");
-
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agent-file-ingest`;
-  const fd = new FormData();
-  fd.append("agent_id", params.agent_id);
-  fd.append("workspace_id", params.workspace_id);
-  fd.append("file", params.file);
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: fd,
-  });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data?.error || `File ingest failed (${resp.status})`);
-  return data as { ok: boolean; chunks: number; source_id: string };
-}
+const mapFileToKnowledgeType = (file: File): KnowledgeSourceType => {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "pdf":
+      return "pdf";
+    case "doc":
+    case "docx":
+      return "docx";
+    case "csv":
+      return "csv";
+    case "txt":
+      return "txt";
+    default:
+      return "manual";
+  }
+};
 
 export default function AgentKnowledge({
   loading,
@@ -78,21 +69,23 @@ export default function AgentKnowledge({
             <Button
               onClick={async () => {
                 if (!agentId) return;
-                if (!workspace?.id) return;
                 if (!file) return;
                 setUploading(true);
                 try {
-                  const res = await callFileIngest({ agent_id: agentId, workspace_id: workspace.id, file });
+                  await createKnowledgeSource({
+                    workspace_id: workspace.id,
+                    agent_id: agentId,
+                    type: mapFileToKnowledgeType(file),
+                    title: file.name,
+                  });
                   // show success via parent toast
                   await onIngest([]); // no-op call to allow parent to toast? parent ignores empty; still safe
-                  // eslint-disable-next-line no-console
-                  console.log("file ingested", res);
                 } finally {
                   setUploading(false);
                   setFile(null);
                 }
               }}
-              disabled={disabled || uploading || !file || !workspace?.id}
+              disabled={disabled || uploading || !file}
             >
               {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Upload & Ingest

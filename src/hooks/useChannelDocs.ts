@@ -9,7 +9,7 @@ export function useChannelDocs(channelKey: string | null, langCode: string | nul
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!workspace || !channelKey || !langCode) {
+    if (!channelKey || !langCode) {
       setDoc(null);
       return;
     }
@@ -24,7 +24,7 @@ export function useChannelDocs(channelKey: string | null, langCode: string | nul
     } finally {
       setIsLoading(false);
     }
-  }, [workspace, channelKey, langCode]);
+  }, [workspace.id, channelKey, langCode]);
 
   useEffect(() => {
     load();
