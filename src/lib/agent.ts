@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 
 export type Agent = {
   id: string;
@@ -8,6 +8,8 @@ export type Agent = {
   tone: string | null;
   language: string | null;
   rules: string | null;
+  status?: string | null;
+  is_active?: boolean | null;
   llm_chat_model?: string | null;
   llm_temperature?: number | null;
   rag_top_k?: number | null;
@@ -49,4 +51,21 @@ export async function updateAgent(agentId: string, patch: Partial<Agent>) {
     .single();
   if (error) throw error;
   return data as Agent;
+}
+
+export async function getAgentForWorkspace(workspaceId: string) {
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error('Supabase not configured');
+  }
+
+  const { data, error } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as Agent) ?? null;
 }
