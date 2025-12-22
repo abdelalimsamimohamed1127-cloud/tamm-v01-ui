@@ -44,8 +44,6 @@ const navItems = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
-  { key: 'orders', icon: ShoppingCart, path: '/dashboard/orders' },
-  { key: 'tickets', icon: LifeBuoy, path: '/dashboard/tickets' },
   { key: 'automations', icon: Workflow, path: '/dashboard/automations' },
   { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
   { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },

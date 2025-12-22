@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Search, Send, Sparkles, Hand, HandMetal } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { useSearchParams } from 'react-router-dom';
 
 type ConversationRow = {
   id: string;
@@ -41,6 +43,7 @@ const leads: LeadRow[] = [];
 export default function Inbox() {
   const { dir } = useLanguage();
   const { workspace } = useWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
@@ -123,6 +126,13 @@ export default function Inbox() {
     if (!selectedConversation) return;
     void fetchMessages(selectedConversation);
   }, [selectedConversation, fetchMessages]);
+
+  useEffect(() => {
+    const typeParam = searchParams.get('type');
+    if (typeParam) {
+      setTypeFilters([typeParam]);
+    }
+  }, [searchParams]);
 
   async function sendHumanMessage() {
     if (!selectedConversationRow) return;
