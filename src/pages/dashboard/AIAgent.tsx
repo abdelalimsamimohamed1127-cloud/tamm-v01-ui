@@ -128,6 +128,20 @@ function ModalShell({
   );
 }
 
+/////////timer - badge////////
+function formatRelativeTime(date: string | null | undefined) {
+  if (!date) return "Never trained";
+
+  const diffMs = Date.now() - new Date(date).getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "1 day ago";
+  return `${diffDays} days ago`;
+}
+
+//////////////////
+
 export default function AIAgent() {
   /* =============================
      RESIZE SLIDER (LEFT / RIGHT)
@@ -198,6 +212,31 @@ export default function AIAgent() {
   const [rules, setRules] = useState("");
   const [message, setMessage] = useState("");
   const [activeSource, setActiveSource] = useState<KnowledgeTab>(null);
+  /* =============================
+   SOURCES STATE (UI SAFE)
+   DO NOT TOUCH UI
+============================= */
+
+type AgentSource = {
+  id: string;
+  type: "file" | "files" | "website" | "text" | "catalog" | "qa" | "qna";
+  meta?: {
+    size_kb?: number;
+    [key: string]: any;
+  };
+};
+
+type SourcesState =
+  | { status: "empty"; sources: AgentSource[] }
+  | { status: "loaded"; sources: AgentSource[] };
+
+const [sourcesState, setSourcesState] = useState<SourcesState>({
+  status: "empty",
+  sources: [],
+});
+
+const [sourcesLoading, setSourcesLoading] = useState(false);
+
   /* =============================
      MOBILE TABS (ADD ONLY)
   ============================== */
@@ -392,33 +431,58 @@ export default function AIAgent() {
         {/* <div
           className="h-full overflow-y-auto pr-4"
           style={{ width: `${leftWidth}%` }}
-        > */}
-          
+        > */} 
           <div className="space-y-6">
             <Card className="p-5 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-lg">Agent Settings</h2>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs font-medium ${
-                      isAgentActive ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {isAgentActive ? "Active" : "Disabled"}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={isAgentActive ? "outline" : "default"}
-                    onClick={isAgentActive ? handleDeactivate : handleReactivate}
-                    disabled={!hasAgent || statusBusy}
-                  >
-                    {updatingStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    {isAgentActive ? "Disable" : "Enable"}
-                  </Button>
+                            <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-semibold leading-tight">Agent Settings</h2>
+                  {hasAgent && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1 font-medium text-emerald-600">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Trained
+                      </span>
+                      <span className="opacity-70">Last trained {formatRelativeTime(agent?.updated_at)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {isAgentActive ? "Active" : "Disabled"}
+                    </span>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isAgentActive}
+                      aria-label={isAgentActive ? "Disable agent" : "Enable agent"}
+                      onClick={isAgentActive ? handleDeactivate : handleReactivate}
+                      disabled={!hasAgent || statusBusy}
+                      title={isAgentActive ? "Turning off will stop responses" : "Turn on to allow responses"}
+                      className={[
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        isAgentActive ? "bg-blue-600" : "bg-muted",
+                        (!hasAgent || statusBusy) ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
+                        "focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
+                          isAgentActive ? "translate-x-5" : "translate-x-1",
+                        ].join(" ")}
+                      />
+                    </button>
+
+                    {updatingStatus && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  </div>
                 </div>
               </div>
 
-              <div>
+<div>
                 <label className="text-xs text-muted-foreground">Role</label>
                 <Select
                   onValueChange={(value) => {

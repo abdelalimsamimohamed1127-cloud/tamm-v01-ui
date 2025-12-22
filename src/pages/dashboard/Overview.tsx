@@ -14,7 +14,17 @@ interface Stats {
 
 export default function Overview() {
   const { t, dir } = useLanguage();
-  const { workspace } = useWorkspace();
+  
+  const { workspace, isLoading } = useWorkspace();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!workspace) {
+    return <div>No workspace found</div>;
+  }
+
   const [stats, setStats] = useState<Stats>({ conversations: 0, orders: 0, revenue: 0 });
   const [loading, setLoading] = useState(true);
 

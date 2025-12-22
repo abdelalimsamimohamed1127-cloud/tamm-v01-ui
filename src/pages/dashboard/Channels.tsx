@@ -408,12 +408,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+
 import {
   MessageSquare,
+  Mail,
+  Zap,
+  Slack,
+  Globe,
+  Phone,
+  Instagram,
   MessageCircle,
+  Webhook,
   BookOpen,
   X,
 } from "lucide-react";
+
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useChannelDocs } from "@/hooks/useChannelDocs";
 import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
@@ -442,6 +451,20 @@ type Channel = {
    DATA (UI ONLY)
 ============================= */
 const CHANNEL_LIBRARY: Omit<Channel, "enabled">[] = [
+  {
+    id: "help",
+    title: "Help Page",
+    desc: "Standalone ChatGPT-style help page.",
+    icon: Globe,
+  },
+  {
+    id: "email",
+    title: "Email",
+    desc:
+      "Connect your agent to an email address and let it respond to messages from your customers.",
+    icon: Mail,
+    beta: true,
+  },
   {
     id: "webchat",
     title: "Webchat",

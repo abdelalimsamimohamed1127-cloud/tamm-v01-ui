@@ -46,15 +46,15 @@ begin
       and column_name = 'rules_jsonb'
   ) then
     update public.agents
-    set rules = coalesce(rules, rules_jsonb, '{}'::jsonb)
-    where rules is null
-       or rules::text = '{}';
+    set rules = rules_jsonb
+    where rules is null;
   else
     update public.agents
     set rules = '{}'::jsonb
     where rules is null;
   end if;
 end $$;
+
 
 
 -- Enforce contract constraints

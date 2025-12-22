@@ -1,8 +1,9 @@
 import { useContext } from 'react';
-import { WorkspaceContext, Workspace } from '@/contexts/WorkspaceContext';
+import type { Workspace } from '@/contexts/WorkspaceContext';
+import { WorkspaceContext } from '@/contexts/WorkspaceContext';
 
 interface WorkspaceHookValue {
-  workspace: Workspace;
+  workspace: Workspace | null;
   isLoading: boolean;
   refreshWorkspace: () => Promise<void>;
 }
@@ -10,13 +11,13 @@ interface WorkspaceHookValue {
 export function useWorkspace(): WorkspaceHookValue {
   const context = useContext(WorkspaceContext);
 
-  if (!context || !context.workspace) {
-    throw new Error('Workspace context not ready');
+  if (!context) {
+    return {
+      workspace: null,
+      isLoading: true,
+      refreshWorkspace: async () => {},
+    };
   }
 
-  return {
-    workspace: context.workspace,
-    isLoading: context.isLoading,
-    refreshWorkspace: context.refreshWorkspace,
-  };
+  return context;
 }

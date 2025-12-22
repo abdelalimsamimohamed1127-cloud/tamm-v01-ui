@@ -1,6 +1,17 @@
-import { createContext, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+
+/* =========================
+   Types
+========================= */
 
 export interface Workspace {
   id: string;
@@ -16,7 +27,16 @@ interface WorkspaceContextValue {
   refreshWorkspace: () => Promise<void>;
 }
 
-export const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
+/* =========================
+   Context
+========================= */
+
+export const WorkspaceContext =
+  createContext<WorkspaceContextValue | undefined>(undefined);
+
+/* =========================
+   Provider
+========================= */
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -24,13 +44,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const loadWorkspace = useCallback(async () => {
-    if (!user) {
-      setWorkspace(null);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!supabase || !isSupabaseConfigured) {
+    if (!user || !supabase || !isSupabaseConfigured) {
       setWorkspace(null);
       setIsLoading(false);
       return;
@@ -40,7 +54,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const { data, error } = await supabase
       .from('workspace_members')
-      .select('workspace_id, workspaces(*)')
+      .select('workspaces(*)')
       .eq('user_id', user.id)
       .limit(1)
       .maybeSingle();
@@ -48,11 +62,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.error('Error fetching workspace:', error);
       setWorkspace(null);
-      setIsLoading(false);
-      return;
+    } else {
+      setWorkspace((data?.workspaces as Workspace) ?? null);
     }
 
-    setWorkspace((data?.workspaces as unknown as Workspace) ?? null);
     setIsLoading(false);
   }, [user]);
 
@@ -69,13 +82,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [workspace, isLoading, loadWorkspace]
   );
 
-  if (user && isLoading) {
-    return null;
-  }
-
-  if (user && !isLoading && !workspace) {
-    throw new Error('Workspace not found');
-  }
-
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return (
+    <WorkspaceContext.Provider value={value}>
+      {children}
+    </WorkspaceContext.Provider>
+  );
 }
