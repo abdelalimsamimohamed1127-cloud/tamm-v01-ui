@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  LayoutDashboard,
   Radio,
   Bot,
   Inbox,
@@ -39,7 +38,6 @@ interface DashboardLayoutProps {
 }
 
 const navItems = [
-  { key: 'overview', icon: LayoutDashboard, path: '/dashboard/overview' },
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
