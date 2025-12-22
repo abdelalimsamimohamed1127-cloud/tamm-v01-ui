@@ -50,7 +50,6 @@ export default function Inbox() {
   const [channels, setChannels] = useState<ChannelRow[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [messageTypeFilter, setMessageTypeFilter] = useState<string>('all');
-  const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'inbox' | 'leads'>('inbox');
@@ -212,66 +211,6 @@ export default function Inbox() {
       className="h-[calc(100vh-6rem)] flex flex-col gap-4"
       dir={dir}
     >
-      <Card className="p-4 space-y-3">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'القناة' : 'Channel'}</p>
-            <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
-              <SelectTrigger>
-                <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
-                {channels.map((ch) => (
-                  <SelectItem key={ch.id} value={ch.id}>
-                    {ch.name} • {ch.type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'النوع' : 'Type'}</p>
-            <ToggleGroup
-              type="multiple"
-              value={typeFilters}
-              onValueChange={(vals) => setTypeFilters(vals)}
-              className="flex flex-wrap gap-2"
-            >
-              <ToggleGroupItem value="chat" aria-label="Chat">
-                {dir === 'rtl' ? 'دردشة' : 'Chat'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="order" aria-label="Order">
-                {dir === 'rtl' ? 'طلب' : 'Order'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="ticket" aria-label="Ticket">
-                {dir === 'rtl' ? 'تذكرة' : 'Ticket'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="inquiry" aria-label="Inquiry">
-                {dir === 'rtl' ? 'استفسار' : 'Inquiry'}
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'التاريخ' : 'Date range'}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                placeholder={dir === 'rtl' ? 'من' : 'From'}
-              />
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                placeholder={dir === 'rtl' ? 'إلى' : 'To'}
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
-
       <div className="flex items-center justify-between">
         <TabsList>
           <TabsTrigger value="inbox">{dir === 'rtl' ? 'الوارد' : 'Inbox'}</TabsTrigger>
