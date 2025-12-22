@@ -11,3 +11,7 @@ export function SettingsIndexRedirect() {
 export function SettingsIndexRedirect() {
   return <Navigate to="general" replace />;
 }
+
+export function SettingsIndexRedirect() {
+  return <Navigate to="general" replace />;
+}
