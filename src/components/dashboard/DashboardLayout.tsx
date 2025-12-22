@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -66,8 +66,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { t, dir } = useLanguage();
   const { workspace } = useWorkspace();
   const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [workspaceCreated, setWorkspaceCreated] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceUrl, setWorkspaceUrl] = useState('');
 
   const handleSignOut = async () => {
     await signOut();
@@ -320,6 +325,55 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
+              <DialogTrigger asChild>
+                <span />
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Create workspace</DialogTitle>
+                  <DialogDescription>
+                    Set up a workspace URL to collaborate with your team. This is a preview only.
+                  </DialogDescription>
+                </DialogHeader>
+                {!workspaceCreated ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Workspace name</label>
+                      <Input
+                        value={workspaceName}
+                        onChange={(e) => setWorkspaceName(e.target.value)}
+                        placeholder="Acme Support"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Workspace URL</label>
+                      <Input
+                        value={workspaceUrl}
+                        onChange={(e) => setWorkspaceUrl(e.target.value)}
+                        placeholder="acme"
+                      />
+                      <p className="text-xs text-muted-foreground">your-workspace.tamm.chat</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-lg border p-3 bg-muted/40">
+                    <p className="text-sm font-medium">Workspace created</p>
+                    <p className="text-xs text-muted-foreground">
+                      You can invite teammates with an invitation code or start configuring channels.
+                    </p>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button
+                    disabled={!workspaceName.trim() || !workspaceUrl.trim()}
+                    onClick={handleCreateWorkspace}
+                  >
+                    {workspaceCreated ? 'Continue to dashboard' : 'Create'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </header>
 
@@ -331,3 +385,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 }
+  const handleManageAgents = () => {
+    navigate('/dashboard/manage-agents');
+  };
+
+  const handleAccountSettings = () => {
+    navigate('/account');
+  };
+
+  const handleWorkspaceDialog = () => {
+    setWorkspaceCreated(false);
+    setWorkspaceDialogOpen(true);
+  };
+
+  const handleCreateWorkspace = () => {
+    if (!workspaceName.trim() || !workspaceUrl.trim()) return;
+    setWorkspaceCreated(true);
+    setTimeout(() => {
+      navigate('/dashboard');
+      setWorkspaceDialogOpen(false);
+      setWorkspaceName('');
+      setWorkspaceUrl('');
+    }, 600);
+  };

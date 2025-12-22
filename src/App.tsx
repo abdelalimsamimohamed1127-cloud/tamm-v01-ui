@@ -49,6 +49,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/account" element={<Account />} />
 
       <Route path="/dashboard/*" element={<Dashboard />}>
         <Route index element={<Navigate to="overview" replace />} />
