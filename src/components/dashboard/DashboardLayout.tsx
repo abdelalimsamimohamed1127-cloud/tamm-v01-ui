@@ -28,7 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  User,
+  Users,
   Sparkles,
   Menu,
   ChevronDown,
