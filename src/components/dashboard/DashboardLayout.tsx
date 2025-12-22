@@ -32,6 +32,7 @@ import {
   Sparkles,
   Menu,
   ChevronDown,
+  BadgePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
