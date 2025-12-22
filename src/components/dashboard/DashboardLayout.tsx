@@ -7,6 +7,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
