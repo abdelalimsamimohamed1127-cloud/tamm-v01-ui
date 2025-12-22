@@ -30,6 +30,7 @@ import {
   User,
   Sparkles,
   Menu,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +48,15 @@ const navItems = [
   { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
   { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },
   { key: 'analytics', icon: BarChart3, path: '/dashboard/analytics' },
-  { key: 'settings', icon: Settings, path: '/dashboard/settings' },
+  {
+    key: 'settings',
+    icon: Settings,
+    path: '/dashboard/settings/general',
+    children: [
+      { key: 'settings.general', path: '/dashboard/settings/general' },
+      { key: 'settings.security', path: '/dashboard/settings/security' },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -63,36 +72,96 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   };
 
   const isActive = (path: string) => location.pathname === path;
+  const isParentActive = (item: NavItem) =>
+    item.children?.some((child) => location.pathname.startsWith(child.path));
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ settings: true });
 
   const NavContent = () => (
     <nav className="flex-1 px-3 py-4 space-y-1">
-      {navItems.map((item) => (
-        <Link
-          key={item.key}
-          to={item.path}
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-            isActive(item.path)
-              ? 'bg-primary text-primary-foreground shadow-md'
-              : 'text-sidebar-foreground hover:bg-sidebar-accent'
-          )}
-        >
-          <item.icon className="h-5 w-5 flex-shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                className="text-sm font-medium whitespace-nowrap"
+      {navItems.map((item) => {
+        const hasChildren = Boolean(item.children?.length);
+        const active = item.path ? isActive(item.path) || isParentActive(item) : isParentActive(item);
+        return (
+          <div key={item.key} className="space-y-1">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-left',
+                  active ? 'bg-primary text-primary-foreground shadow-md' : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
               >
-                {t(`dashboard.${item.key}`)}
-              </motion.span>
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="flex items-center gap-2 text-sm font-medium whitespace-nowrap"
+                    >
+                      {t(`dashboard.${item.key}`)}
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          expanded[item.key] ? 'rotate-180' : 'rotate-0'
+                        )}
+                      />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
+            ) : (
+              <Link
+                to={item.path!}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
+                  isActive(item.path!)
+                    ? 'bg-primary text-primary-foreground shadow-md'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="text-sm font-medium whitespace-nowrap"
+                    >
+                      {t(`dashboard.${item.key}`)}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
             )}
-          </AnimatePresence>
-        </Link>
-      ))}
+
+            {hasChildren && expanded[item.key] && (
+              <div className={cn('space-y-1', collapsed && 'hidden')}>
+                {item.children?.map((child) => (
+                  <Link
+                    key={child.key}
+                    to={child.path}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'ml-9 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200',
+                      isActive(child.path)
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                    )}
+                  >
+                    <span className="truncate">{t(`dashboard.${child.key}`)}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 

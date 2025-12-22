@@ -75,6 +75,8 @@ const translations: Record<Language, Record<string, string>> = {
     'dashboard.insights': 'Insights',
     'dashboard.analytics': 'Analytics',
     'dashboard.settings': 'Settings',
+    'dashboard.settings.general': 'General',
+    'dashboard.settings.security': 'Security',
     // Stats
     'stats.conversations': 'Conversations Today',
     'stats.orders': 'Orders Captured',
@@ -156,6 +158,8 @@ const translations: Record<Language, Record<string, string>> = {
     'dashboard.insights': 'الرؤى',
     'dashboard.analytics': 'التحليلات',
     'dashboard.settings': 'الإعدادات',
+    'dashboard.settings.general': 'عام',
+    'dashboard.settings.security': 'الأمان',
     // Stats
     'stats.conversations': 'محادثات اليوم',
     'stats.orders': 'طلبات ملتقطة',
