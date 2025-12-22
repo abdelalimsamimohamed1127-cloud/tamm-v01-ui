@@ -38,14 +38,7 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-type NavItem = {
-  key: string;
-  icon: any;
-  path?: string;
-  children?: { key: string; path: string }[];
-};
-
-const navItems: NavItem[] = [
+const navItems = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
