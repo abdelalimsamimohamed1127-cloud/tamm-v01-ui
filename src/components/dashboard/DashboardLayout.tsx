@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -15,7 +15,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  LayoutDashboard,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
   Radio,
   Bot,
   Inbox,
@@ -31,6 +40,9 @@ import {
   User,
   Sparkles,
   Menu,
+  ChevronDown,
+  Users,
+  BadgePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -38,8 +50,14 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-const navItems = [
-  { key: 'overview', icon: LayoutDashboard, path: '/dashboard/overview' },
+type NavItem = {
+  key: string;
+  icon: any;
+  path?: string;
+  children?: { key: string; path: string }[];
+};
+
+const navItems: NavItem[] = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
@@ -49,7 +67,15 @@ const navItems = [
   { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
   { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },
   { key: 'analytics', icon: BarChart3, path: '/dashboard/analytics' },
-  { key: 'settings', icon: Settings, path: '/dashboard/settings' },
+  {
+    key: 'settings',
+    icon: Settings,
+    path: '/dashboard/settings/general',
+    children: [
+      { key: 'settings.general', path: '/dashboard/settings/general' },
+      { key: 'settings.security', path: '/dashboard/settings/security' },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -57,44 +83,109 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { t, dir } = useLanguage();
   const { workspace } = useWorkspace();
   const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [workspaceCreated, setWorkspaceCreated] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceUrl, setWorkspaceUrl] = useState('');
 
   const handleSignOut = async () => {
     await signOut();
   };
 
   const isActive = (path: string) => location.pathname === path;
+  const isParentActive = (item: NavItem) =>
+    item.children?.some((child) => location.pathname.startsWith(child.path));
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ settings: true });
 
   const NavContent = () => (
     <nav className="flex-1 px-3 py-4 space-y-1">
-      {navItems.map((item) => (
-        <Link
-          key={item.key}
-          to={item.path}
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-            isActive(item.path)
-              ? 'bg-primary text-primary-foreground shadow-md'
-              : 'text-sidebar-foreground hover:bg-sidebar-accent'
-          )}
-        >
-          <item.icon className="h-5 w-5 flex-shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                className="text-sm font-medium whitespace-nowrap"
+      {navItems.map((item) => {
+        const hasChildren = Boolean(item.children?.length);
+        const active = item.path ? isActive(item.path) || isParentActive(item) : isParentActive(item);
+        return (
+          <div key={item.key} className="space-y-1">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-left',
+                  active ? 'bg-primary text-primary-foreground shadow-md' : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
               >
-                {t(`dashboard.${item.key}`)}
-              </motion.span>
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="flex items-center gap-2 text-sm font-medium whitespace-nowrap"
+                    >
+                      {t(`dashboard.${item.key}`)}
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          expanded[item.key] ? 'rotate-180' : 'rotate-0'
+                        )}
+                      />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
+            ) : (
+              <Link
+                to={item.path!}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
+                  isActive(item.path!)
+                    ? 'bg-primary text-primary-foreground shadow-md'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="text-sm font-medium whitespace-nowrap"
+                    >
+                      {t(`dashboard.${item.key}`)}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
             )}
-          </AnimatePresence>
-        </Link>
-      ))}
+
+            {hasChildren && expanded[item.key] && (
+              <div className={cn('space-y-1', collapsed && 'hidden')}>
+                {item.children?.map((child) => (
+                  <Link
+                    key={child.key}
+                    to={child.path}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'ml-9 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200',
+                      isActive(child.path)
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                    )}
+                  >
+                    <span className="truncate">{t(`dashboard.${child.key}`)}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 
@@ -226,13 +317,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="h-4 w-4 mr-2" />
-                  Profile
+                <DropdownMenuItem onClick={handleManageAgents} className="flex items-center">
+                  <Users className="h-4 w-4 mr-2" />
+                  Manage agents
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
+                <DropdownMenuItem onClick={handleAccountSettings} className="flex items-center">
+                  <User className="h-4 w-4 mr-2" />
+                  Account settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleWorkspaceDialog} className="flex items-center">
+                  <BadgePlus className="h-4 w-4 mr-2" />
+                  Create or join workspace
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
@@ -241,6 +336,55 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
+              <DialogTrigger asChild>
+                <span />
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Create workspace</DialogTitle>
+                  <DialogDescription>
+                    Set up a workspace URL to collaborate with your team. This is a preview only.
+                  </DialogDescription>
+                </DialogHeader>
+                {!workspaceCreated ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Workspace name</label>
+                      <Input
+                        value={workspaceName}
+                        onChange={(e) => setWorkspaceName(e.target.value)}
+                        placeholder="Acme Support"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Workspace URL</label>
+                      <Input
+                        value={workspaceUrl}
+                        onChange={(e) => setWorkspaceUrl(e.target.value)}
+                        placeholder="acme"
+                      />
+                      <p className="text-xs text-muted-foreground">your-workspace.tamm.chat</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-lg border p-3 bg-muted/40">
+                    <p className="text-sm font-medium">Workspace created</p>
+                    <p className="text-xs text-muted-foreground">
+                      You can invite teammates with an invitation code or start configuring channels.
+                    </p>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button
+                    disabled={!workspaceName.trim() || !workspaceUrl.trim()}
+                    onClick={handleCreateWorkspace}
+                  >
+                    {workspaceCreated ? 'Continue to dashboard' : 'Create'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </header>
 
@@ -252,3 +396,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 }
+  const handleManageAgents = () => {
+    navigate('/dashboard/manage-agents');
+  };
+
+  const handleAccountSettings = () => {
+    navigate('/account');
+  };
+
+  const handleWorkspaceDialog = () => {
+    setWorkspaceCreated(false);
+    setWorkspaceDialogOpen(true);
+  };
+
+  const handleCreateWorkspace = () => {
+    if (!workspaceName.trim() || !workspaceUrl.trim()) return;
+    setWorkspaceCreated(true);
+    setTimeout(() => {
+      navigate('/dashboard');
+      setWorkspaceDialogOpen(false);
+      setWorkspaceName('');
+      setWorkspaceUrl('');
+    }, 600);
+  };
