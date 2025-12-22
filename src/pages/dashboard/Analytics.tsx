@@ -1,188 +1,142 @@
-import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { PLAN_LIMITS, normalizePlanTier, formatBytes } from '@/lib/plan';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 
-type UsageRow = {
-  period_yyyymm: string;
-  messages_in: number | null;
-  messages_out: number | null;
-  kb_bytes: number | null;
-  channels_count: number | null;
-  agents_count: number | null;
-  sources_count: number | null;
-};
+const metrics = [
+  { label: "Messages", value: "24,580", change: "+8%" },
+  { label: "Orders", value: "1,142", change: "+4%" },
+  { label: "Requests / Inquiries", value: "3,287", change: "-2%" },
+];
+
+const channelPerformance = [
+  { channel: "WhatsApp", messages: "12,340", response: "94%", time: "1m 12s" },
+  { channel: "Instagram", messages: "6,420", response: "92%", time: "1m 35s" },
+  { channel: "Facebook", messages: "3,120", response: "89%", time: "1m 58s" },
+  { channel: "Web Chat", messages: "2,700", response: "96%", time: "48s" },
+];
+
+const aiInsights = [
+  { label: "AI resolution", value: "81%", hint: "Conversations handled without human handoff" },
+  { label: "Avg. first response", value: "9.3s", hint: "Time to first reply across all channels" },
+  { label: "Suggested replies used", value: "64%", hint: "Human agents accepted AI drafts" },
+];
+
+const businessInsights = [
+  "Order confirmations increased after hours by 12% week-over-week.",
+  "Ticket-type requests are down 6% after workflow updates.",
+  "Top converting channel remains WhatsApp with 2.4x lift over Instagram.",
+];
 
 export default function Analytics() {
-  const { t } = useLanguage();
-  const { workspace } = useWorkspace();
-  const { toast } = useToast();
-  const [refreshing, setRefreshing] = useState(false);
-  const [tier, setTier] = useState<'free' | 'paid1' | 'paid2' | 'paid3'>('free');
-  const [usage, setUsage] = useState<UsageRow | null>(null);
-
-  const period = useMemo(() => {
-    const d = new Date();
-    return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  }, []);
-
-  const limits = PLAN_LIMITS[tier];
-
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      const { data: wsSettings } = await supabase
-        .from('workspace_settings')
-        .select('plan_tier')
-        .eq('workspace_id', workspace.id)
-        .maybeSingle();
-
-      if (!active) return;
-      setTier(normalizePlanTier(wsSettings?.plan_tier) as any);
-
-      const { data: usageRow } = await supabase
-        .from('usage_counters')
-        .select('period_yyyymm,messages_in,messages_out,kb_bytes,channels_count,agents_count,sources_count')
-        .eq('workspace_id', workspace.id)
-        .eq('period_yyyymm', period)
-        .maybeSingle();
-
-      if (!active) return;
-      setUsage((usageRow as any) ?? null);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [workspace.id, period]);
-
-  const metrics = useMemo(() => {
-    const u = usage ?? {
-      period_yyyymm: period,
-      messages_in: 0,
-      messages_out: 0,
-      kb_bytes: 0,
-      channels_count: 0,
-      agents_count: 0,
-      sources_count: 0,
-    };
-
-    const safe = (n: any) => (typeof n === 'number' ? n : 0);
-
-    return {
-      in: safe(u.messages_in),
-      out: safe(u.messages_out),
-      kb: safe(u.kb_bytes),
-      channels: safe(u.channels_count),
-      agents: safe(u.agents_count),
-      sources: safe(u.sources_count),
-    };
-  }, [usage, period]);
-
-  const percent = (v: number, max: number) => {
-    if (!max || max <= 0) return 0;
-    return Math.min(100, Math.round((v / max) * 100));
-  };
-
-  async function refreshUsage() {
-    setRefreshing(true);
-    const { data, error } = await supabase.functions.invoke('recompute_usage', {
-      body: { workspace_id: workspace.id, period_yyyymm: period },
-    });
-    setRefreshing(false);
-    if (error) {
-      toast({ title: 'Usage', description: error.message, variant: 'destructive' });
-      return;
-    }
-    if (data?.usage) setUsage(data.usage as any);
-    if (data?.tier) setTier(normalizePlanTier(data.tier) as any);
-    toast({ title: 'Usage refreshed', description: 'Counts were recomputed from DB.' });
-  }
-
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Button variant="outline" size="sm" onClick={refreshUsage} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</Button>
-        <div>
-          <h1 className="text-2xl font-semibold">{t('Analytics')}</h1>
-          <p className="text-sm text-muted-foreground">
-            Usage & limits for period <span className="font-mono">{period}</span>
-          </p>
-        </div>
-        <Badge variant="secondary" className="text-sm">
-          Plan: {tier}
-        </Badge>
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold">Analytics</h1>
+        <p className="text-sm text-muted-foreground">Performance snapshots across channels and AI responses.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        {metrics.map((metric) => (
+          <Card key={metric.label}>
+            <CardHeader className="pb-2">
+              <CardDescription>{metric.label}</CardDescription>
+              <CardTitle className="text-2xl">{metric.value}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Badge variant="secondary" className={metric.change.startsWith("-") ? "text-destructive" : "text-emerald-600"}>
+                {metric.change}
+              </Badge>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="h-full">
           <CardHeader>
-            <CardTitle>Messages</CardTitle>
-            <CardDescription>Monthly message usage (in/out)</CardDescription>
+            <CardTitle>Channel performance</CardTitle>
+            <CardDescription>Volume and responsiveness by channel.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>Inbound</span>
-                <span className="font-mono">{metrics.in} / {limits.maxMessagesInPerMonth}</span>
+          <CardContent className="space-y-3">
+            {channelPerformance.map((row) => (
+              <div key={row.channel} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">{row.channel}</div>
+                  <Badge variant="secondary">{row.messages} msgs</Badge>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                  <div>Response rate: {row.response}</div>
+                  <div>Avg. response: {row.time}</div>
+                </div>
+                <Progress value={parseInt(row.response)} className="mt-3" />
               </div>
-              <Progress value={percent(metrics.in, limits.maxMessagesInPerMonth)} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>Outbound (AI)</span>
-                <span className="font-mono">{metrics.out} / {limits.maxMessagesOutPerMonth}</span>
-              </div>
-              <Progress value={percent(metrics.out, limits.maxMessagesOutPerMonth)} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Hard blocks apply when limits are reached. Draft suggestions do not count as outbound AI messages.
-            </p>
+            ))}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="h-full">
           <CardHeader>
-            <CardTitle>Knowledge Base</CardTitle>
-            <CardDescription>Storage + sources</CardDescription>
+            <CardTitle>AI response insights</CardTitle>
+            <CardDescription>Quality and adoption of automated replies.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>KB bytes</span>
-                <span className="font-mono">{formatBytes(metrics.kb)} / {formatBytes(limits.maxKbBytes)}</span>
+            {aiInsights.map((insight) => (
+              <div key={insight.label} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">{insight.label}</div>
+                  <span className="text-lg font-semibold">{insight.value}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{insight.hint}</p>
               </div>
-              <Progress value={percent(metrics.kb, limits.maxKbBytes)} />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-muted-foreground">Agents</div>
-                <div className="text-lg font-semibold">{metrics.agents}<span className="text-xs text-muted-foreground"> / {limits.maxAgents}</span></div>
-              </div>
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-muted-foreground">Channels</div>
-                <div className="text-lg font-semibold">{metrics.channels}<span className="text-xs text-muted-foreground"> / {limits.maxChannels}</span></div>
-              </div>
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-muted-foreground">Sources</div>
-                <div className="text-lg font-semibold">{metrics.sources}<span className="text-xs text-muted-foreground"> / {limits.maxSources}</span></div>
-              </div>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Agents/channels/sources are enforced at the database level (triggers). If you hit the cap, upgrade your plan.
-            </p>
+            ))}
           </CardContent>
         </Card>
       </div>
-    </motion.div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Business insights</CardTitle>
+          <CardDescription>Callouts surfaced from recent activity.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {businessInsights.map((item, idx) => (
+            <div key={idx} className="flex gap-3">
+              <div className="h-2 w-2 rounded-full bg-primary mt-2" />
+              <p className="text-sm text-muted-foreground">{item}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Monthly report</CardTitle>
+            <CardDescription>Summary across channels, orders, and AI efficiency.</CardDescription>
+          </div>
+          <Button variant="outline">Generate report</Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Top channel</p>
+              <p className="text-lg font-semibold">WhatsApp</p>
+              <p className="text-xs text-muted-foreground">53% of total conversations</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Conversion rate</p>
+              <p className="text-lg font-semibold">18.4%</p>
+              <p className="text-xs text-muted-foreground">Orders from qualified inquiries</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Avg. resolution</p>
+              <p className="text-lg font-semibold">3.8 interactions</p>
+              <p className="text-xs text-muted-foreground">Messages per resolved thread</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
