@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 import {
   Table,
   TableBody,
@@ -75,6 +76,11 @@ export default function Tickets() {
             {dir === 'rtl' ? 'الشكاوى وطلبات الدعم التي تم استخراجها تلقائيًا أو إنشاؤها يدويًا.' : 'Support tickets extracted automatically or created manually.'}
           </p>
         </div>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/dashboard/inbox?type=ticket">
+            {dir === 'rtl' ? 'عرض في النشاط' : 'View in Activity'}
+          </Link>
+        </Button>
       </motion.div>
 
       <Card>

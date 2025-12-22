@@ -14,6 +14,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ShoppingCart, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 interface Order {
   id: string;
@@ -72,11 +74,18 @@ export default function Orders() {
 
   return (
     <div className="space-y-6" dir={dir}>
-      <div>
-        <h1 className="text-2xl font-bold">{t('dashboard.orders')}</h1>
-        <p className="text-muted-foreground">
-          {dir === 'rtl' ? 'تتبع الطلبات الملتقطة' : 'Track captured orders'}
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{t('dashboard.orders')}</h1>
+          <p className="text-muted-foreground">
+            {dir === 'rtl' ? 'تتبع الطلبات الملتقطة' : 'Track captured orders'}
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/dashboard/inbox?type=order">
+            {dir === 'rtl' ? 'عرض في النشاط' : 'View in Activity'}
+          </Link>
+        </Button>
       </div>
 
       <motion.div
