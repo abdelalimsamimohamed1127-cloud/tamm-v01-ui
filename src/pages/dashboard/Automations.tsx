@@ -1,98 +1,82 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/hooks/use-toast';
-import { Table, Webhook, Bell, Loader2 } from 'lucide-react';
-
-interface Automation {
-  id: string;
-  type: string;
-  enabled: boolean;
-  config: Record<string, unknown> | null;
-}
+import {
+  Table,
+  Webhook,
+  Bell,
+  Clock3,
+  Ticket,
+  Tag,
+  AlertTriangle,
+  Megaphone,
+} from 'lucide-react';
 
 const automationConfig = [
   {
-    type: 'google_sheets',
-    icon: Table,
-    title: { en: 'Log to Google Sheets', ar: 'تسجيل في Google Sheets' },
-    description: { en: 'Automatically log orders and conversations', ar: 'تسجيل الطلبات والمحادثات تلقائياً' },
+    type: 'after_hours_reply',
+    icon: Clock3,
+    title: 'Auto-reply outside business hours',
+    description: 'Send a polite response and handoff when team is offline.',
   },
   {
-    type: 'whatsapp_notification',
+    type: 'convert_to_ticket',
+    icon: Ticket,
+    title: 'Convert message to ticket',
+    description: 'Turn flagged messages into tickets for support.',
+  },
+  {
+    type: 'tag_order_intent',
+    icon: Tag,
+    title: 'Tag order intent',
+    description: 'Automatically tag conversations with purchase intent.',
+  },
+  {
+    type: 'notify_high_value',
     icon: Bell,
-    title: { en: 'WhatsApp Notifications', ar: 'إشعارات واتساب' },
-    description: { en: 'Get notified about new orders on WhatsApp', ar: 'احصل على إشعارات الطلبات الجديدة' },
+    title: 'Notify owner on high-value order',
+    description: 'Send an alert when orders exceed your threshold.',
   },
   {
-    type: 'n8n_webhook',
+    type: 'escalate_angry',
+    icon: AlertTriangle,
+    title: 'Escalate angry customer',
+    description: 'Flag negative sentiment and route to a human quickly.',
+  },
+  {
+    type: 'log_to_sheets',
+    icon: Table,
+    title: 'Log to Google Sheets',
+    description: 'Record orders and conversations in your spreadsheet.',
+  },
+  {
+    type: 'trigger_webhook',
     icon: Webhook,
-    title: { en: 'Trigger n8n Workflow', ar: 'تشغيل سير عمل n8n' },
-    description: { en: 'Connect to n8n for advanced automations', ar: 'اربط مع n8n للأتمتة المتقدمة' },
+    title: 'Trigger webhook (n8n/zap)',
+    description: 'Ping external workflows for advanced actions.',
+  },
+  {
+    type: 'broadcast_updates',
+    icon: Megaphone,
+    title: 'Broadcast status updates',
+    description: 'Send quick updates to customers during incidents.',
   },
 ];
 
 export default function Automations() {
   const { t, dir } = useLanguage();
-  const { workspace } = useWorkspace();
-  const { toast } = useToast();
-  const [automations, setAutomations] = useState<Automation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [states, setStates] = useState<Record<string, boolean>>(() => {
+    return automationConfig.reduce<Record<string, boolean>>((acc, item) => {
+      acc[item.type] = false;
+      return acc;
+    }, {});
+  });
 
-  const fetchAutomations = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('automations')
-      .select('*')
-      .eq('workspace_id', workspace.id);
-
-    if (!error && data) {
-      setAutomations(data as Automation[]);
-    }
-    setLoading(false);
-  }, [workspace.id]);
-
-  useEffect(() => {
-    void fetchAutomations();
-  }, [fetchAutomations]);
-
-  const handleToggle = async (automationId: string, enabled: boolean) => {
-    const { error } = await supabase
-      .from('automations')
-      .update({ enabled })
-      .eq('id', automationId);
-
-    if (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message,
-      });
-    } else {
-      setAutomations((prev) =>
-        prev.map((a) => (a.id === automationId ? { ...a, enabled } : a))
-      );
-      toast({
-        title: enabled 
-          ? (dir === 'rtl' ? 'تم التفعيل!' : 'Enabled!') 
-          : (dir === 'rtl' ? 'تم الإيقاف' : 'Disabled'),
-      });
-    }
+  const toggleAutomation = (type: string, enabled: boolean) => {
+    setStates((prev) => ({ ...prev, [type]: enabled }));
   };
-
-  const getAutomation = (type: string) => automations.find((a) => a.type === type);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6" dir={dir}>
@@ -105,7 +89,7 @@ export default function Automations() {
 
       <div className="grid gap-4">
         {automationConfig.map((config, i) => {
-          const automation = getAutomation(config.type);
+          const enabled = states[config.type];
 
           return (
             <motion.div
@@ -122,19 +106,13 @@ export default function Automations() {
                         <config.icon className="h-6 w-6 text-primary" />
                       </div>
                       <div>
-                        <CardTitle className="text-lg">
-                          {dir === 'rtl' ? config.title.ar : config.title.en}
-                        </CardTitle>
-                        <CardDescription>
-                          {dir === 'rtl' ? config.description.ar : config.description.en}
-                        </CardDescription>
+                        <CardTitle className="text-lg">{config.title}</CardTitle>
+                        <CardDescription>{config.description}</CardDescription>
                       </div>
                     </div>
                     <Switch
-                      checked={automation?.enabled || false}
-                      onCheckedChange={(checked) =>
-                        automation && handleToggle(automation.id, checked)
-                      }
+                      checked={enabled}
+                      onCheckedChange={(checked) => toggleAutomation(config.type, checked)}
                     />
                   </div>
                 </CardHeader>
