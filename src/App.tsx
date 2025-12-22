@@ -6,9 +6,6 @@ import Channels from "@/pages/dashboard/Channels";
 import Settings, { SettingsIndexRedirect } from "@/pages/dashboard/Settings";
 import SettingsGeneral from "@/pages/dashboard/SettingsGeneral";
 import SettingsSecurity from "@/pages/dashboard/SettingsSecurity";
-import ManageAgents from "@/pages/dashboard/ManageAgents";
-import WorkspaceSettings from "@/pages/dashboard/WorkspaceSettings";
-import Account from "@/pages/Account";
 import AIAgent from "@/pages/dashboard/AIAgent";
 import Inbox from "@/pages/dashboard/Inbox";
 import Orders from "@/pages/dashboard/Orders";
@@ -66,8 +63,6 @@ export default function App() {
         <Route path="evals" element={<Evals />} />
         <Route path="insights" element={<Insights />} />
         <Route path="analytics" element={<Analytics />} />
-        <Route path="manage-agents" element={<ManageAgents />} />
-        <Route path="workspace" element={<WorkspaceSettings />} />
         <Route path="settings/*" element={<Settings />}>
           <Route index element={<SettingsIndexRedirect />} />
           <Route path="general" element={<SettingsGeneral />} />

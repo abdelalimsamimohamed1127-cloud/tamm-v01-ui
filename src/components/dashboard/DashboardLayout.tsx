@@ -7,6 +7,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,16 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import {
   Radio,
   Bot,
@@ -41,7 +32,6 @@ import {
   Sparkles,
   Menu,
   ChevronDown,
-  Users,
   BadgePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -50,14 +40,7 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-type NavItem = {
-  key: string;
-  icon: any;
-  path?: string;
-  children?: { key: string; path: string }[];
-};
-
-const navItems: NavItem[] = [
+const navItems = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
@@ -315,17 +298,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleManageAgents} className="flex items-center">
-                  <Users className="h-4 w-4 mr-2" />
-                  Manage agents
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/manage-agents" className="flex items-center">
+                    <Users className="h-4 w-4 mr-2" />
+                    Manage agents
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleAccountSettings} className="flex items-center">
-                  <User className="h-4 w-4 mr-2" />
-                  Account settings
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/settings/general" className="flex items-center">
+                    <User className="h-4 w-4 mr-2" />
+                    Account settings
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleWorkspaceDialog} className="flex items-center">
-                  <BadgePlus className="h-4 w-4 mr-2" />
-                  Create or join workspace
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/workspace" className="flex items-center">
+                    <BadgePlus className="h-4 w-4 mr-2" />
+                    Create or join workspace
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
