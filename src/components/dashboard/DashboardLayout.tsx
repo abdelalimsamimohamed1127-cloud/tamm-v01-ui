@@ -293,13 +293,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="h-4 w-4 mr-2" />
-                  Profile
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/manage-agents" className="flex items-center">
+                    <Users className="h-4 w-4 mr-2" />
+                    Manage agents
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/settings/general" className="flex items-center">
+                    <User className="h-4 w-4 mr-2" />
+                    Account settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/workspace" className="flex items-center">
+                    <BadgePlus className="h-4 w-4 mr-2" />
+                    Create or join workspace
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
