@@ -171,13 +171,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   );
 
   return (
-    <div className="min-h-screen bg-muted/30 flex" dir={dir}>
+    <div className="min-h-screen bg-slate-50 flex" dir={dir}>
       {/* Desktop Sidebar */}
       <motion.aside
         initial={false}
         animate={{ width: collapsed ? 72 : 256 }}
         className={cn(
-          'hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border',
+          'hidden lg:flex flex-col bg-slate-100 border-r border-sidebar-border',
           dir === 'rtl' ? 'border-l border-r-0' : ''
         )}
       >

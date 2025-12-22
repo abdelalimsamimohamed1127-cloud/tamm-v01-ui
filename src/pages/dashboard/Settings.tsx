@@ -7,3 +7,7 @@ export default function Settings() {
 export function SettingsIndexRedirect() {
   return <Navigate to="general" replace />;
 }
+
+export function SettingsIndexRedirect() {
+  return <Navigate to="general" replace />;
+}
