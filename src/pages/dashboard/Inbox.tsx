@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Search, Send, Sparkles, Hand, HandMetal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +34,9 @@ type MessageRow = {
 };
 
 type ChannelRow = { id: string; name: string; type: string };
+type LeadRow = { name: string; phone: string; email: string; channel: string; date: string };
+
+const leads: LeadRow[] = [];
 
 export default function Inbox() {
   const { dir } = useLanguage();
@@ -41,6 +46,10 @@ export default function Inbox() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [channels, setChannels] = useState<ChannelRow[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
+  const [messageTypeFilter, setMessageTypeFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'inbox' | 'leads'>('inbox');
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<MessageRow[]>([]);
@@ -186,103 +195,147 @@ export default function Inbox() {
   }, [conversations, search]);
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex flex-col gap-4" dir={dir}>
-      <div className="flex flex-col lg:flex-row gap-4 h-full">
-        {/* Left: conversation list */}
-        <Card className="lg:w-80 flex flex-col">
-          <div className="p-4 border-b space-y-3">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={dir === 'rtl' ? 'بحث...' : 'Search...'}
-                  className="pl-10 rtl:pl-3 rtl:pr-10"
-                />
+    <Tabs
+      value={activeTab}
+      onValueChange={(v) => setActiveTab(v as 'inbox' | 'leads')}
+      className="h-[calc(100vh-6rem)] flex flex-col gap-4"
+      dir={dir}
+    >
+      <div className="flex items-center justify-between">
+        <TabsList>
+          <TabsTrigger value="inbox">{dir === 'rtl' ? 'الوارد' : 'Inbox'}</TabsTrigger>
+          <TabsTrigger value="leads">{dir === 'rtl' ? 'العملاء المحتملون' : 'Leads'}</TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="inbox" className="flex-1 mt-0">
+        <div className="flex flex-col lg:flex-row gap-4 h-full">
+          {/* Left: conversation list */}
+          <Card className="lg:w-80 flex flex-col">
+            <div className="p-4 border-b space-y-3">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={dir === 'rtl' ? 'بحث...' : 'Search...'}
+                    className="pl-10 rtl:pl-3 rtl:pr-10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
+                      {channels.map((ch) => (
+                        <SelectItem key={ch.id} value={ch.id}>
+                          {ch.name} • {ch.type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={messageTypeFilter} onValueChange={setMessageTypeFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={dir === 'rtl' ? 'نوع الرسالة' : 'Message type'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{dir === 'rtl' ? 'كل الأنواع' : 'All types'}</SelectItem>
+                      <SelectItem value="ticket">{dir === 'rtl' ? 'تذكرة' : 'Ticket'}</SelectItem>
+                      <SelectItem value="order">{dir === 'rtl' ? 'طلب' : 'Order'}</SelectItem>
+                      <SelectItem value="inquiry">{dir === 'rtl' ? 'استفسار' : 'Inquiry'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    placeholder={dir === 'rtl' ? 'من' : 'From'}
+                  />
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    placeholder={dir === 'rtl' ? 'إلى' : 'To'}
+                  />
+                </div>
               </div>
             </div>
 
-            <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
-              <SelectTrigger>
-                <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
-                {channels.map((ch) => (
-                  <SelectItem key={ch.id} value={ch.id}>
-                    {ch.name} • {ch.type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {drafts.length > 0 && (
-  <Card className="p-3 border-dashed">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4" />
-        <div className="text-sm font-medium">{dir === 'rtl' ? 'اقتراحات الذكاء الاصطناعي' : 'AI Suggestions'}</div>
-        <Badge variant="secondary">{drafts.length}</Badge>
-      </div>
-      <div className="text-xs text-muted-foreground">
-        {dir === 'rtl' ? 'لن تُرسل تلقائيًا' : 'Not sent automatically'}
-      </div>
-    </div>
-    <div className="mt-3 space-y-2">
-      {drafts.slice(-3).map((d) => (
-        <div key={d.id} className="rounded-lg border p-2 bg-muted/40">
-          <div className="text-sm whitespace-pre-wrap">{d.message_text}</div>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => void sendDraft(d.id)}>
-              {dir === 'rtl' ? 'إرسال' : 'Send'}
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  </Card>
-)}
-
-                <ScrollArea className="flex-1">
-            {loading ? (
-              <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'تحميل...' : 'Loading...'}</div>
-            ) : filteredConversations.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'لا توجد محادثات' : 'No conversations'}</div>
-            ) : (
-              <div className="p-2">
-                {filteredConversations.map((conv) => (
-                  <motion.button
-                    key={conv.id}
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
-                    onClick={() => setSelectedConversation(conv.id)}
-                    className={cn(
-                      'w-full p-3 rounded-lg text-left flex items-center gap-3 hover:bg-muted/50 transition',
-                      selectedConversation === conv.id && 'bg-muted'
-                    )}
-                  >
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback>{(conv.external_user_id ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium truncate">{conv.external_user_id}</p>
-                        <Badge variant={conv.status === 'handoff' ? 'destructive' : 'secondary'}>
-                          {conv.status}
-                        </Badge>
+            {drafts.length > 0 && (
+              <Card className="p-3 border-dashed">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" />
+                    <div className="text-sm font-medium">{dir === 'rtl' ? 'اقتراحات الذكاء الاصطناعي' : 'AI Suggestions'}</div>
+                    <Badge variant="secondary">{drafts.length}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {dir === 'rtl' ? 'لن تُرسل تلقائيًا' : 'Not sent automatically'}
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {drafts.slice(-3).map((d) => (
+                    <div key={d.id} className="rounded-lg border p-2 bg-muted/40">
+                      <div className="text-sm whitespace-pre-wrap">{d.message_text}</div>
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => void sendDraft(d.id)}>
+                          {dir === 'rtl' ? 'إرسال' : 'Send'}
+                        </Button>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {(conv.channels?.name ?? 'Channel')} • {new Date(conv.updated_at).toLocaleString()}
-                      </p>
                     </div>
-                  </motion.button>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </Card>
             )}
-          </ScrollArea>
-        </Card>
+
+            <ScrollArea className="flex-1">
+              {loading ? (
+                <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'تحميل...' : 'Loading...'}</div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'لا توجد محادثات' : 'No conversations'}</div>
+              ) : (
+                <div className="p-2">
+                  {filteredConversations.map((conv) => (
+                    <motion.button
+                      key={conv.id}
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => setSelectedConversation(conv.id)}
+                      className={cn(
+                        'w-full p-3 rounded-lg text-left flex items-center gap-3 hover:bg-muted/50 transition',
+                        selectedConversation === conv.id && 'bg-muted'
+                      )}
+                    >
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback>{(conv.external_user_id ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-medium truncate">{conv.external_user_id}</p>
+                          <Badge variant={conv.status === 'handoff' ? 'destructive' : 'secondary'}>
+                            {conv.status}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {(conv.channels?.name ?? 'Channel')} • {new Date(conv.updated_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </Card>
 
         {/* Right: messages */}
         <Card className="flex-1 flex flex-col">
@@ -388,6 +441,61 @@ export default function Inbox() {
           )}
         </Card>
       </div>
-    </div>
+    </TabsContent>
+
+    <TabsContent value="leads" className="flex-1 mt-0">
+      <Card className="h-full flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">{dir === 'rtl' ? 'العملاء المحتملون' : 'Leads'}</h3>
+            <p className="text-xs text-muted-foreground">
+              {dir === 'rtl' ? 'عرض وتحميل بيانات العملاء المحتملين' : 'View and export lead activity'}
+            </p>
+          </div>
+          <Button variant="outline">{dir === 'rtl' ? 'تصدير' : 'Export'}</Button>
+        </div>
+        <div className="p-4 flex-1 flex flex-col">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{dir === 'rtl' ? 'الاسم' : 'Name'}</TableHead>
+                <TableHead>{dir === 'rtl' ? 'الهاتف' : 'Phone'}</TableHead>
+                <TableHead>{dir === 'rtl' ? 'البريد الإلكتروني' : 'Email'}</TableHead>
+                <TableHead>{dir === 'rtl' ? 'القناة' : 'Channel'}</TableHead>
+                <TableHead>{dir === 'rtl' ? 'التاريخ' : 'Date'}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {leads.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+                      <Sparkles className="h-8 w-8 text-muted-foreground" />
+                      <div className="text-sm font-medium">{dir === 'rtl' ? 'لا توجد بيانات بعد' : 'No leads yet'}</div>
+                      <p className="text-xs text-muted-foreground max-w-md">
+                        {dir === 'rtl'
+                          ? 'سيظهر العملاء المحتملون هنا حالما تبدأ المحادثات الجديدة. يمكنك التصدير عند توفر البيانات.'
+                          : 'Leads will appear here as new conversations start. Export will be available once data is captured.'}
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                leads.map((lead) => (
+                  <TableRow key={`${lead.email}-${lead.date}`}>
+                    <TableCell className="font-medium">{lead.name}</TableCell>
+                    <TableCell>{lead.phone}</TableCell>
+                    <TableCell>{lead.email}</TableCell>
+                    <TableCell>{lead.channel}</TableCell>
+                    <TableCell>{lead.date}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </TabsContent>
+    </Tabs>
   );
 }
