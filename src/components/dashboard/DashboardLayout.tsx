@@ -18,13 +18,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -95,7 +88,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
-  const [workspaceSettingsTab, setWorkspaceSettingsTab] = useState('general');
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
@@ -264,7 +256,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
-                <Button variant="outline" size="sm" className="w-full min-h-[44px]">
+                <Button variant="outline" size="sm" className="w-full">
                   Upgrade
                 </Button>
               </div>
@@ -451,62 +443,33 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <DialogTrigger asChild>
                 <span />
               </DialogTrigger>
-              <DialogContent
-                className="sm:max-w-5xl w-screen h-screen sm:h-auto sm:w-auto max-h-screen sm:max-h-[85vh] p-0 sm:p-6 overflow-hidden rounded-none sm:rounded-lg left-0 top-0 translate-x-0 translate-y-0 sm:left-1/2 sm:top-1/2 sm:translate-x-[-50%] sm:translate-y-[-50%]"
-                onInteractOutside={(event) => {
-                  if (event.defaultPrevented) return;
-                }}
-              >
-                <div className="flex h-full flex-col overflow-hidden">
-                  <DialogHeader className="px-6 pt-6 sm:px-0 sm:pt-0">
-                    <DialogTitle>Workspace settings</DialogTitle>
-                    <DialogDescription>
-                      Manage workspace details without leaving your current page.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="flex-1 overflow-y-auto px-6 pb-6 sm:px-0 sm:pb-0">
-                    <Tabs
-                      value={workspaceSettingsTab}
-                      onValueChange={setWorkspaceSettingsTab}
-                      className="space-y-4 h-full"
-                    >
-                      <div className="sm:hidden">
-                        <Select value={workspaceSettingsTab} onValueChange={setWorkspaceSettingsTab}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="general">General</SelectItem>
-                            <SelectItem value="members">Members</SelectItem>
-                            <SelectItem value="plans">Plans</SelectItem>
-                            <SelectItem value="billing">Billing</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <TabsList className="hidden sm:grid w-full grid-cols-4">
-                        <TabsTrigger value="general">General</TabsTrigger>
-                        <TabsTrigger value="members">Members</TabsTrigger>
-                        <TabsTrigger value="plans">Plans</TabsTrigger>
-                        <TabsTrigger value="billing">Billing</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="general" className="space-y-4">
-                        <WorkspaceGeneralSettingsCard />
-                      </TabsContent>
-                      <TabsContent value="members" className="space-y-4">
-                        <WorkspaceMembersSettingsCard />
-                      </TabsContent>
-                      <TabsContent value="plans" className="space-y-4">
-                        <WorkspacePlansSettingsCard />
-                      </TabsContent>
-                      <TabsContent value="billing" className="space-y-4">
-                        <WorkspaceBillingSettingsCard />
-                      </TabsContent>
-                    </Tabs>
-                  </div>
-                </div>
+              <DialogContent className="sm:max-w-5xl">
+                <DialogHeader>
+                  <DialogTitle>Workspace settings</DialogTitle>
+                  <DialogDescription>
+                    Manage workspace details without leaving your current page.
+                  </DialogDescription>
+                </DialogHeader>
+                <Tabs defaultValue="general" className="space-y-4">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="general">General</TabsTrigger>
+                    <TabsTrigger value="members">Members</TabsTrigger>
+                    <TabsTrigger value="plans">Plans</TabsTrigger>
+                    <TabsTrigger value="billing">Billing</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="general">
+                    <WorkspaceGeneralSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="members">
+                    <WorkspaceMembersSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="plans">
+                    <WorkspacePlansSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="billing">
+                    <WorkspaceBillingSettingsCard />
+                  </TabsContent>
+                </Tabs>
               </DialogContent>
             </Dialog>
           </div>
