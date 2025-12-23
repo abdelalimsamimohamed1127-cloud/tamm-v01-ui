@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { useWorkspace } from '@/hooks/useWorkspace'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -12,64 +11,107 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { ShoppingCart, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-
-interface Order {
-  id: string;
-  customer_name: string | null;
-  product: string | null;
-  channel: string | null;
-  status: string | null;
-  amount: number | null;
-  created_at: string;
-}
+} from '@/components/ui/table'
+import { ShoppingCart } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { getOrders, type Order } from '@/services/orders'
 
 export default function Orders() {
-  const { t, dir } = useLanguage();
-  const { workspace } = useWorkspace();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { t, dir } = useLanguage()
+  const { workspace } = useWorkspace()
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const currencyFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+      }),
+    []
+  )
 
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('workspace_id', workspace.id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setOrders(data);
+    if (!workspace?.id) {
+      setOrders([])
+      setLoading(false)
+      return
     }
-    setLoading(false);
-  }, [workspace.id]);
+    setLoading(true)
+    try {
+      const data = await getOrders(workspace.id)
+      setOrders(data)
+    } catch (error) {
+      console.error(error)
+      setOrders([])
+    } finally {
+      setLoading(false)
+    }
+  }, [workspace?.id])
 
   useEffect(() => {
-    void fetchOrders();
-  }, [fetchOrders]);
+    void fetchOrders()
+  }, [fetchOrders])
 
   const getStatusBadge = (status: string | null) => {
     switch (status) {
-      case 'confirmed':
-        return <Badge className="bg-accent text-accent-foreground">{dir === 'rtl' ? 'مؤكد' : 'Confirmed'}</Badge>;
+      case 'paid':
+        return <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white">{dir === 'rtl' ? 'مدفوع' : 'Paid'}</Badge>
       case 'pending':
-        return <Badge variant="secondary">{dir === 'rtl' ? 'قيد الانتظار' : 'Pending'}</Badge>;
+        return <Badge className="bg-amber-400 text-black hover:bg-amber-500">{dir === 'rtl' ? 'قيد الانتظار' : 'Pending'}</Badge>
       case 'cancelled':
-        return <Badge variant="destructive">{dir === 'rtl' ? 'ملغي' : 'Cancelled'}</Badge>;
+        return <Badge variant="destructive">{dir === 'rtl' ? 'ملغي' : 'Cancelled'}</Badge>
       default:
-        return <Badge variant="outline">{status || 'Unknown'}</Badge>;
+        return <Badge variant="outline">{status || 'Unknown'}</Badge>
     }
-  };
+  }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+  const renderAmount = (amount: number | null) => {
+    if (amount === null || Number.isNaN(amount)) return '-'
+    return currencyFormatter.format(amount / 100)
+  }
+
+  const renderTableRows = () => {
+    if (loading) {
+      return Array.from({ length: 5 }).map((_, idx) => (
+        <TableRow key={`skeleton-${idx}`}>
+          {Array.from({ length: 6 }).map((__, cellIdx) => (
+            <TableCell key={`cell-${idx}-${cellIdx}`}>
+              <Skeleton className="h-4 w-full" />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))
+    }
+
+    if (orders.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+            {dir === 'rtl' ? 'لا توجد طلبات بعد' : 'No orders detected yet.'}
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    return orders.map((order) => (
+      <TableRow key={order.id}>
+        <TableCell className="font-medium">{order.customer_name || 'Unknown'}</TableCell>
+        <TableCell>-</TableCell>
+        <TableCell>
+          <Badge variant="outline" className="capitalize">
+            -
+          </Badge>
+        </TableCell>
+        <TableCell>{renderAmount(order.amount)}</TableCell>
+        <TableCell>{getStatusBadge(order.status)}</TableCell>
+        <TableCell className="text-muted-foreground">
+          {new Date(order.created_at).toLocaleDateString()}
+        </TableCell>
+      </TableRow>
+    ))
   }
 
   return (
@@ -88,10 +130,7 @@ export default function Orders() {
         </Button>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -100,55 +139,22 @@ export default function Orders() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {orders.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <ShoppingCart className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>{dir === 'rtl' ? 'لا توجد طلبات بعد' : 'No orders yet'}</p>
-                <p className="text-sm">
-                  {dir === 'rtl'
-                    ? 'ستظهر الطلبات هنا عندما يكتشفها تمم'
-                    : 'Orders will appear here when Tamm detects them'}
-                </p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{dir === 'rtl' ? 'العميل' : 'Customer'}</TableHead>
-                    <TableHead>{dir === 'rtl' ? 'المنتج' : 'Product'}</TableHead>
-                    <TableHead>{dir === 'rtl' ? 'القناة' : 'Channel'}</TableHead>
-                    <TableHead>{dir === 'rtl' ? 'المبلغ' : 'Amount'}</TableHead>
-                    <TableHead>{dir === 'rtl' ? 'الحالة' : 'Status'}</TableHead>
-                    <TableHead>{dir === 'rtl' ? 'التاريخ' : 'Date'}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {orders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-medium">
-                        {order.customer_name || 'Unknown'}
-                      </TableCell>
-                      <TableCell>{order.product || '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {order.channel || '-'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {order.amount ? `$${Number(order.amount).toFixed(2)}` : '-'}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(order.status)}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(order.created_at).toLocaleDateString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{dir === 'rtl' ? 'العميل' : 'Customer'}</TableHead>
+                  <TableHead>{dir === 'rtl' ? 'المنتج' : 'Product'}</TableHead>
+                  <TableHead>{dir === 'rtl' ? 'القناة' : 'Channel'}</TableHead>
+                  <TableHead>{dir === 'rtl' ? 'المبلغ' : 'Amount'}</TableHead>
+                  <TableHead>{dir === 'rtl' ? 'الحالة' : 'Status'}</TableHead>
+                  <TableHead>{dir === 'rtl' ? 'التاريخ' : 'Date'}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>{renderTableRows()}</TableBody>
+            </Table>
           </CardContent>
         </Card>
       </motion.div>
     </div>
-  );
+  )
 }
