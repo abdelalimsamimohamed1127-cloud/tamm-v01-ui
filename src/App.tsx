@@ -69,7 +69,10 @@ export default function App() {
         <Route path="automations" element={<Automations />} />
         <Route path="evals" element={<Evals />} />
         <Route path="insights" element={<Insights />} />
-        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics" element={<Navigate to="analytics/general" replace />} />
+        <Route path="analytics/general" element={<Analytics />} />
+        <Route path="analytics/evals" element={<Evals />} />
+        <Route path="analytics/insights" element={<Insights />} />
 
         {/* Profile menu destinations */}
         <Route path="account" element={<Account />} />
