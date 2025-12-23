@@ -41,7 +41,7 @@ import {
   ShoppingCart,
   LifeBuoy,
   Workflow,
-  BarChart3,
+  BarChart,
   ClipboardList,
   Settings,
   ChevronLeft,
@@ -52,21 +52,47 @@ import {
   Menu,
   ChevronDown,
   BadgePlus,
+  Activity,
+  CheckCircle2,
+  Lightbulb,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-const navItems = [
+type NavChildItem = {
+  key: string;
+  path: string;
+  icon?: LucideIcon;
+};
+
+type NavItem = {
+  key: string;
+  icon: LucideIcon;
+  path?: string;
+  children?: NavChildItem[];
+};
+
+const navItems: NavItem[] = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
   { key: 'automations', icon: Workflow, path: '/dashboard/automations' },
   { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
   { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },
-  { key: 'analytics', icon: BarChart3, path: '/dashboard/analytics' },
+  {
+    key: 'analytics',
+    icon: BarChart,
+    path: '/dashboard/analytics/general',
+    children: [
+      { key: 'analytics.general', path: '/dashboard/analytics/general', icon: Activity },
+      { key: 'analytics.evals', path: '/dashboard/analytics/evals', icon: CheckCircle2 },
+      { key: 'analytics.insights', path: '/dashboard/analytics/insights', icon: Lightbulb },
+    ],
+  },
   {
     key: 'settings',
     icon: Settings,
@@ -105,7 +131,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const isParentActive = (item: NavItem) =>
     item.children?.some((child) => location.pathname.startsWith(child.path));
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ settings: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    analytics: location.pathname.startsWith('/dashboard/analytics'),
+    settings: true,
+  });
 
   const NavContent = () => (
     <nav className="flex-1 px-3 py-4 space-y-1">
@@ -184,6 +213,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                         : 'text-sidebar-foreground hover:bg-sidebar-accent'
                     )}
                   >
+                    {child.icon && <child.icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
                     <span className="truncate">{t(`dashboard.${child.key}`)}</span>
                   </Link>
                 ))}
