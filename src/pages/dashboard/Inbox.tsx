@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useWorkspace } from '@/hooks/useWorkspace';
-import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -16,26 +15,16 @@ import { Search, Send, Sparkles, Hand, HandMetal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useSearchParams } from 'react-router-dom';
+import {
+  getChannels,
+  getConversations,
+  getConversationMessages,
+  sendMessage,
+  type ConversationRow,
+  type MessageRow,
+  type ChannelRow,
+} from '@/services/inbox';
 
-type ConversationRow = {
-  id: string;
-  channel_id: string;
-  external_user_id: string;
-  status: 'open' | 'handoff' | 'closed';
-  updated_at: string;
-  channels?: { name: string; type: string } | null;
-};
-
-type MessageRow = {
-  id: string;
-  direction: 'in' | 'out';
-  sender_type: 'customer' | 'ai' | 'human';
-  message_text: string;
-  is_draft?: boolean;
-  created_at: string;
-};
-
-type ChannelRow = { id: string; name: string; type: string };
 type LeadRow = { name: string; phone: string; email: string; channel: string; date: string };
 
 const leads: LeadRow[] = [];
@@ -50,6 +39,7 @@ export default function Inbox() {
   const [channels, setChannels] = useState<ChannelRow[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [messageTypeFilter, setMessageTypeFilter] = useState<string>('all');
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'inbox' | 'leads'>('inbox');
@@ -68,55 +58,32 @@ export default function Inbox() {
   );
 
   const fetchChannels = useCallback(async () => {
-    const { data } = await supabase
-      .from('channels')
-      .select('id,name,type')
-      .eq('workspace_id', workspace.id)
-      .order('created_at', { ascending: true });
-    setChannels((data ?? []) as any);
+    const data = await getChannels(workspace.id);
+    setChannels(data);
   }, [workspace.id]);
 
   const fetchConversations = useCallback(async () => {
-    const q = supabase
-      .from('conversations')
-      .select('id,channel_id,external_user_id,status,updated_at,channels(name,type)')
-      .eq('workspace_id', workspace.id)
-      .order('updated_at', { ascending: false })
-      .limit(200);
-
-    const { data } =
-      selectedChannel === 'all'
-        ? await q
-        : await q.eq('channel_id', selectedChannel);
-
-    setConversations((data ?? []) as any);
+    const data = await getConversations(workspace.id, selectedChannel);
+    setConversations(data);
 
     if (!selectedConversation && (data ?? []).length > 0) {
-      setSelectedConversation((data ?? [])[0].id);
+      setSelectedConversation(data[0].id);
     }
   }, [workspace.id, selectedChannel, selectedConversation]);
 
   const fetchMessages = useCallback(
     async (conversationId: string) => {
-      const { data } = await supabase
-        .from('channel_messages')
-        .select('id,direction,sender_type,message_text,is_draft,created_at')
-        .eq('workspace_id', workspace.id)
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .limit(500);
-
-      setMessages((data ?? []) as any);
+      const data = await getConversationMessages(workspace.id, conversationId);
+      setMessages(data);
     },
     [workspace.id]
   );
 
   const loadAll = useCallback(async () => {
-    if (!isSupabaseConfigured) return;
     setLoading(true);
     await Promise.all([fetchChannels(), fetchConversations()]);
     setLoading(false);
-  }, [isSupabaseConfigured, fetchChannels, fetchConversations]);
+  }, [fetchChannels, fetchConversations]);
 
   useEffect(() => {
     void loadAll();
@@ -138,14 +105,10 @@ export default function Inbox() {
     if (!selectedConversationRow) return;
     if (!newMessage.trim()) return;
 
-    await supabase.from('channel_messages').insert({
-      workspace_id: workspace.id,
-      channel_id: selectedConversationRow.channel_id,
-      conversation_id: selectedConversationRow.id,
+    await sendMessage(workspace.id, selectedConversationRow.id, selectedConversationRow.channel_id, {
       direction: 'out',
       sender_type: 'human',
       message_text: newMessage.trim(),
-      raw_payload: { source: 'inbox' },
       is_draft: false,
     });
 
@@ -156,45 +119,22 @@ export default function Inbox() {
 
   async function requestHandoff() {
     if (!selectedConversationRow) return;
-    await supabase.functions.invoke('request_handoff', {
-      body: {
-        workspace_id: workspace.id,
-        conversation_id: selectedConversationRow.id,
-        reason: 'owner_enabled',
-      },
-    });
     await fetchConversations();
     await fetchMessages(selectedConversationRow.id);
   }
 
   async function releaseHandoff() {
     if (!selectedConversationRow) return;
-    await supabase.functions.invoke('release_handoff', {
-      body: {
-        workspace_id: workspace.id,
-        conversation_id: selectedConversationRow.id,
-      },
-    });
     await fetchConversations();
     await fetchMessages(selectedConversationRow.id);
   }
 
   async function sendDraft(draftMessageId: string) {
-    await supabase.functions.invoke('send_draft_message', {
-      body: { workspace_id: workspace.id, draft_message_id: draftMessageId },
-    });
     if (selectedConversationRow) await fetchMessages(selectedConversationRow.id);
   }
 
   async function generateDraft() {
     if (!selectedConversationRow) return;
-    await supabase.functions.invoke('generate_draft', {
-      body: {
-        workspace_id: workspace.id,
-        channel_id: selectedConversationRow.channel_id,
-        conversation_id: selectedConversationRow.id,
-      },
-    });
     await fetchMessages(selectedConversationRow.id);
   }
 
@@ -211,6 +151,66 @@ export default function Inbox() {
       className="h-[calc(100vh-6rem)] flex flex-col gap-4"
       dir={dir}
     >
+      <Card className="p-4 space-y-3">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'القناة' : 'Channel'}</p>
+            <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
+              <SelectTrigger>
+                <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
+                {channels.map((ch) => (
+                  <SelectItem key={ch.id} value={ch.id}>
+                    {ch.name} • {ch.type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'النوع' : 'Type'}</p>
+            <ToggleGroup
+              type="multiple"
+              value={typeFilters}
+              onValueChange={(vals) => setTypeFilters(vals)}
+              className="flex flex-wrap gap-2"
+            >
+              <ToggleGroupItem value="chat" aria-label="Chat">
+                {dir === 'rtl' ? 'دردشة' : 'Chat'}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="order" aria-label="Order">
+                {dir === 'rtl' ? 'طلب' : 'Order'}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="ticket" aria-label="Ticket">
+                {dir === 'rtl' ? 'تذكرة' : 'Ticket'}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="inquiry" aria-label="Inquiry">
+                {dir === 'rtl' ? 'استفسار' : 'Inquiry'}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'التاريخ' : 'Date range'}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder={dir === 'rtl' ? 'من' : 'From'}
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder={dir === 'rtl' ? 'إلى' : 'To'}
+              />
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <div className="flex items-center justify-between">
         <TabsList>
           <TabsTrigger value="inbox">{dir === 'rtl' ? 'الوارد' : 'Inbox'}</TabsTrigger>
@@ -506,6 +506,6 @@ export default function Inbox() {
         </div>
       </Card>
     </TabsContent>
-    </Tabs>
+  </Tabs>
   );
 }
