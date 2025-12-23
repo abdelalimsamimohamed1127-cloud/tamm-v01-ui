@@ -17,8 +17,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Input } from "@/components/ui/input";
+import {
+  WorkspaceBillingSettingsCard,
+  WorkspaceGeneralSettingsCard,
+  WorkspaceMembersSettingsCard,
+  WorkspacePlansSettingsCard,
+} from "@/components/workspace/WorkspaceSettingsSections";
 
 import {
   DropdownMenu,
@@ -80,6 +87,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
@@ -338,6 +346,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     Create or join workspace
                   </div>
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setWorkspaceSettingsOpen(true);
+                  }}
+                >
+                  <div className="flex items-center">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Workspace settings
+                  </div>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                   <LogOut className="h-4 w-4 mr-2" />
@@ -392,6 +411,39 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     {workspaceCreated ? 'Continue to dashboard' : 'Create'}
                   </Button>
                 </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={workspaceSettingsOpen} onOpenChange={setWorkspaceSettingsOpen}>
+              <DialogTrigger asChild>
+                <span />
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-5xl">
+                <DialogHeader>
+                  <DialogTitle>Workspace settings</DialogTitle>
+                  <DialogDescription>
+                    Manage workspace details without leaving your current page.
+                  </DialogDescription>
+                </DialogHeader>
+                <Tabs defaultValue="general" className="space-y-4">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="general">General</TabsTrigger>
+                    <TabsTrigger value="members">Members</TabsTrigger>
+                    <TabsTrigger value="plans">Plans</TabsTrigger>
+                    <TabsTrigger value="billing">Billing</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="general">
+                    <WorkspaceGeneralSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="members">
+                    <WorkspaceMembersSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="plans">
+                    <WorkspacePlansSettingsCard />
+                  </TabsContent>
+                  <TabsContent value="billing">
+                    <WorkspaceBillingSettingsCard />
+                  </TabsContent>
+                </Tabs>
               </DialogContent>
             </Dialog>
           </div>
