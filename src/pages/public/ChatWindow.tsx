@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useChat } from "ai/react";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 
 export default function ChatWindow() {
   const { agentId } = useParams();
+  const [searchParams] = useSearchParams();
+  const isEmbed = searchParams.get("mode") === "embed";
+
   const [agentName, setAgentName] = useState("Chat");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [authHeaders, setAuthHeaders] = useState<HeadersInit | undefined>();
@@ -102,18 +105,28 @@ export default function ChatWindow() {
   };
 
   return (
-    <div className="h-screen w-screen bg-background text-foreground flex flex-col">
-      <header className="flex items-center gap-3 px-4 py-3 border-b">
-        <div className="h-10 w-10 rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center">
-          {avatarLetter}
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold truncate">{agentName}</p>
-          <p className="text-xs text-muted-foreground">Powered by Tamm</p>
-        </div>
-      </header>
+    <div
+      className={`bg-background text-foreground flex flex-col ${
+        isEmbed ? "h-full w-full" : "h-screen w-screen"
+      }`}
+    >
+      {!isEmbed && (
+        <header className="flex items-center gap-3 px-4 py-3 border-b">
+          <div className="h-10 w-10 rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center">
+            {avatarLetter}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold truncate">{agentName}</p>
+            <p className="text-xs text-muted-foreground">Powered by Tamm</p>
+          </div>
+        </header>
+      )}
 
-      <main className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/30">
+      <main
+        className={`flex-1 overflow-y-auto bg-muted/30 space-y-3 ${
+          isEmbed ? "p-3" : "p-4"
+        }`}
+      >
         {!agentId ? (
           <div className="text-sm text-muted-foreground">
             Missing agent. Please provide a valid agent ID.
@@ -124,7 +137,10 @@ export default function ChatWindow() {
           </div>
         ) : (
           messages.map((m, idx) => (
-            <div key={idx} className={`flex ${m.role === "assistant" ? "justify-end" : "justify-start"}`}>
+            <div
+              key={idx}
+              className={`flex ${m.role === "assistant" ? "justify-end" : "justify-start"}`}
+            >
               <div
                 className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                   m.role === "assistant"
@@ -140,7 +156,7 @@ export default function ChatWindow() {
         {error ? <p className="text-xs text-destructive">{error.message}</p> : null}
       </main>
 
-      <footer className="border-t bg-background p-3">
+      <footer className={`border-t bg-background ${isEmbed ? "p-2" : "p-3"}`}>
         <form className="flex gap-2" onSubmit={handleFormSubmit}>
           <Input
             value={input}
@@ -159,7 +175,10 @@ export default function ChatWindow() {
               Stop
             </Button>
           ) : (
-            <Button type="submit" disabled={!agentId || !sessionId || isLoading || !input.trim()}>
+            <Button
+              type="submit"
+              disabled={!agentId || !sessionId || isLoading || !input.trim()}
+            >
               Send
             </Button>
           )}
