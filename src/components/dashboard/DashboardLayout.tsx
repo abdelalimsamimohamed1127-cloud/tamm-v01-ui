@@ -354,7 +354,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <Bot className="h-4 w-4" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{agent.name}</p>
-                <p className="text-[11px] text-muted-foreground">ID: {agent.id}</p>
+                <p a className="text-[11px] text-muted-foreground">ID: {agent.id}</p>
               </div>
             </DropdownMenuItem>
           ))}
@@ -383,8 +383,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="flex items-center gap-2"
-                >
+                  className="flex items="#">
                   <span className="text-xl font-bold gradient-text">Tamm</span>
                 </motion.div>
               )}
@@ -490,170 +489,68 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <Sparkles className="h-3 w-3 text-accent" />
                   <span className="capitalize">{workspace?.plan || 'Free'} Plan</span>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    openDialog("agents");
-                  }}
-                >
-                  <div className="flex items-center">
-                    <Users className="h-4 w-4 mr-2" />
-                    Manage agents
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    openDialog("account");
-                  }}
-                >
-                  <div className="flex items-center">
-                    <User className="h-4 w-4 mr-2" />
-                    Account settings
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    // keep menu behavior consistent while opening the dialog
-                    e.preventDefault();
-                    setWorkspaceDialogOpen(true);
-                  }}
-                >
-                  <div className="flex items-center">
-                    <BadgePlus className="h-4 w-4 mr-2" />
-                    Create or join workspace
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    openDialog("workspace");
-                  }}
-                >
-                  <div className="flex items-center">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Workspace settings
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
-              <DialogTrigger asChild>
-                <span />
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Create workspace</DialogTitle>
-                  <DialogDescription>
-                    Set up a workspace URL to collaborate with your team. This is a preview only.
-                  </DialogDescription>
-                </DialogHeader>
-                {!workspaceCreated ? (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Workspace name</label>
-                      <Input
-                        value={workspaceName}
-                        onChange={(e) => setWorkspaceName(e.target.value)}
-                        placeholder="Acme Support"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Workspace URL</label>
-                      <Input
-                        value={workspaceUrl}
-                        onChange={(e) => setWorkspaceUrl(e.target.value)}
-                        placeholder="acme"
-                      />
-                      <p className="text-xs text-muted-foreground">your-workspace.tamm.chat</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2 rounded-lg border p-3 bg-muted/40">
-                    <p className="text-sm font-medium">Workspace created</p>
-                    <p className="text-xs text-muted-foreground">
-                      {workspace?.plan || 'Free'} Plan
-                    </p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to="/dashboard/manage-agents" className="flex items-center">
-                      <Users className="h-4 w-4 mr-2" />
-                      Manage agents
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/dashboard/account" className="flex items-center">
-                      <User className="h-4 w-4 mr-2" />
-                      Account settings
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      // keep menu behavior consistent while opening the dialog
-                      e.preventDefault();
-                      setWorkspaceDialogOpen(true);
-                    }}
-                  >
-                    {workspaceCreated ? 'Continue to dashboard' : 'Create'}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <LanguageToggle />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback>{user?.email?.[0]?.toUpperCase() ?? 'U'}</AvatarFallback>
+                    </Avatar>
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={workspaceSettingsOpen} onOpenChange={setWorkspaceSettingsOpen}>
-              <DialogTrigger asChild>
-                <span />
-              </DialogTrigger>
-            <DialogContent className="sm:max-w-5xl">
-              <DialogHeader>
-                <DialogTitle>Workspace settings</DialogTitle>
-                <DialogDescription>
-                  Manage workspace details without leaving your current page.
-                </DialogDescription>
-              </DialogHeader>
-                <Tabs defaultValue="general" className="space-y-4">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="general">General</TabsTrigger>
-                    <TabsTrigger value="members">Members</TabsTrigger>
-                    <TabsTrigger value="plans">Plans</TabsTrigger>
-                    <TabsTrigger value="billing">Billing</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="general">
-                    <WorkspaceGeneralSettingsCard />
-                  </TabsContent>
-                  <TabsContent value="members">
-                    <WorkspaceMembersSettingsCard />
-                  </TabsContent>
-                  <TabsContent value="plans">
-                    <WorkspacePlansSettingsCard />
-                  </TabsContent>
-                  <TabsContent value="billing">
-                    <WorkspaceBillingSettingsCard />
-                  </TabsContent>
-                </Tabs>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </header>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium">{user?.email}</span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {workspace?.name || 'My Workspace'}
+                    </span>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={(event) => {
+                    event.preventDefault();
+                    navigate('/dashboard/account');
+                  }}>
+                    <User className="h-4 w-4 mr-2" />
+                    Account
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={(event) => {
+                    event.preventDefault();
+                    navigate('/dashboard/workspace-settings');
+                  }}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Workspace Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={(event) => {
+                    event.preventDefault();
+                    navigate('/dashboard/manage-agents');
+                  }}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Manage Agents
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      handleSignOut();
+                    }}
+                    className="text-destructive"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
 
-        <Dialog open={dialogOpen !== null} onOpenChange={(open) => !open && closeDialog()}>
-          <DialogContent className="sm:max-w-4xl p-0">
-            {dialogOpen === "account" && <AccountDialogContent />}
-            {dialogOpen === "workspace" && <WorkspaceDialogContent />}
-            {dialogOpen === "agents" && <ManageAgentsDialogContent />}
-          </DialogContent>
-        </Dialog>
-
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
-          {children}
-        </main>
+          {/* Page Content */}
+          <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
+            {children}
+          </main>
+        </div>
       </div>
     </AgentProvider>
   );
