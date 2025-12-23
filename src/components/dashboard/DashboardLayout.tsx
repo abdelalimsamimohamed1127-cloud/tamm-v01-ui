@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,7 +42,6 @@ import {
   LifeBuoy,
   Workflow,
   BarChart,
-  ClipboardList,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -86,8 +85,6 @@ const navItems: NavItem[] = [
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
   { key: 'automations', icon: Workflow, path: '/dashboard/automations' },
-  { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
-  { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },
   {
     key: 'analytics',
     icon: BarChart,
@@ -177,6 +174,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     analytics: location.pathname.startsWith('/dashboard/analytics'),
     settings: true,
   });
+
+  useEffect(() => {
+    setExpanded((prev) => ({
+      ...prev,
+      analytics: location.pathname.startsWith('/dashboard/analytics') || prev.analytics,
+    }));
+  }, [location.pathname]);
 
   const NavContent = () => (
     <nav className="flex-1 px-3 py-4 space-y-1">
