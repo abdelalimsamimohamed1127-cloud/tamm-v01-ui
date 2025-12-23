@@ -61,6 +61,8 @@ import { cn } from '@/lib/utils';
 import AccountDialogContent from '@/components/settings-dialogs/AccountDialogContent';
 import WorkspaceDialogContent from '@/components/settings-dialogs/WorkspaceDialogContent';
 import ManageAgentsDialogContent from '@/components/settings-dialogs/ManageAgentsDialogContent';
+import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -122,10 +124,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
   const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | null>(null);
+  type CreditsState = 'normal' | 'warning' | 'blocked';
+
   const agentCredits = {
     used: 2,
     limit: 50,
     resetDate: 'Renews on May 1',
+  };
+
+  const creditsPercent = agentCredits.limit === 0 ? 0 : (agentCredits.used / agentCredits.limit) * 100;
+  const creditsState: CreditsState = creditsPercent > 100 ? 'blocked' : creditsPercent >= 70 ? 'warning' : 'normal';
+  const creditsStyles: Record<CreditsState, { bar: string; text: string }> = {
+    normal: { bar: 'bg-primary', text: 'text-muted-foreground' },
+    warning: { bar: 'bg-amber-500', text: 'text-amber-700' },
+    blocked: { bar: 'bg-destructive', text: 'text-destructive' },
   };
 
   const handleSignOut = async () => {
@@ -298,17 +310,37 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="px-3 pb-4 space-y-3">
           <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground">Credits</p>
+              <p className="text-xs font-medium text-muted-foreground">Messages</p>
               <span className="text-xs font-semibold">
                 {agentCredits.used} / {agentCredits.limit}
               </span>
             </div>
+            <div className="mt-2 space-y-2">
+              <div className={cn("flex items-center justify-between text-xs", creditsStyles[creditsState].text)}>
+                <span>{Math.floor(Math.min(creditsPercent, 999))}% used</span>
+                {creditsState === 'blocked' ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="underline underline-offset-2 cursor-default">Over limit</span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">Usage has exceeded the plan limit.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <span>{creditsState === 'warning' ? 'Approaching limit' : 'Within limit'}</span>
+                )}
+              </div>
+              <Progress
+                value={Math.min(creditsPercent, 120)}
+                className="h-2"
+                indicatorClassName={creditsStyles[creditsState].bar}
+              />
+            </div>
             {!collapsed && (
-              <div className="space-y-2 mt-2">
-                <div className="text-xl font-semibold">
-                  {agentCredits.used}
-                  <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
-                </div>
+              <div className="space-y-2 mt-3">
                 <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
                 <Button variant="outline" size="sm" className="w-full">
                   Upgrade
@@ -408,17 +440,37 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="px-3 pb-4 space-y-3">
             <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">Credits</p>
+                <p className="text-xs font-medium text-muted-foreground">Messages</p>
                 <span className="text-xs font-semibold">
                   {agentCredits.used} / {agentCredits.limit}
                 </span>
               </div>
+              <div className="mt-2 space-y-2">
+                <div className={cn("flex items-center justify-between text-xs", creditsStyles[creditsState].text)}>
+                  <span>{Math.floor(Math.min(creditsPercent, 999))}% used</span>
+                  {creditsState === 'blocked' ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="underline underline-offset-2 cursor-default">Over limit</span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">Usage has exceeded the plan limit.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span>{creditsState === 'warning' ? 'Approaching limit' : 'Within limit'}</span>
+                  )}
+                </div>
+                <Progress
+                  value={Math.min(creditsPercent, 120)}
+                  className="h-2"
+                  indicatorClassName={creditsStyles[creditsState].bar}
+                />
+              </div>
               {!collapsed && (
-                <div className="space-y-2 mt-2">
-                  <div className="text-xl font-semibold">
-                    {agentCredits.used}
-                    <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
-                  </div>
+                <div className="space-y-2 mt-3">
                   <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
                   <Button variant="outline" size="sm" className="w-full min-h-[44px]">
                     Upgrade
