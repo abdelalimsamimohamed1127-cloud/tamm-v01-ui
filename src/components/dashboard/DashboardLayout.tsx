@@ -301,7 +301,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               animate={{ x: 0 }}
               exit={{ x: dir === 'rtl' ? 256 : -256 }}
               className={cn(
-                'fixed top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col',
+                'fixed top-0 bottom-0 w-full max-w-xs bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col shadow-lg',
                 dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
               )}
             >
@@ -513,7 +513,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
           {children}
         </main>
       </div>

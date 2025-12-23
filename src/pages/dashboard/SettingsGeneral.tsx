@@ -51,12 +51,14 @@ export default function SettingsGeneral() {
           <CardDescription>Control spending caps for this agent.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+          <div className="flex flex-col gap-3 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-0.5">
               <p className="text-sm font-medium">Enable credit limit</p>
               <p className="text-xs text-muted-foreground">Toggle to enforce a maximum credit usage.</p>
             </div>
-            <Switch checked={creditLimitEnabled} onCheckedChange={setCreditLimitEnabled} />
+            <div className="flex sm:justify-end">
+              <Switch checked={creditLimitEnabled} onCheckedChange={setCreditLimitEnabled} />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -81,24 +83,24 @@ export default function SettingsGeneral() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium">Delete messages</p>
                 <p className="text-xs text-muted-foreground">Remove all messages for this agent.</p>
               </div>
-              <Button variant="destructive" disabled>
+              <Button variant="destructive" disabled className="w-full sm:w-auto">
                 Delete messages
               </Button>
             </div>
             <Separator />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-medium">Delete all conversations</p>
               <p className="text-xs text-muted-foreground">Clear every conversation linked to this agent.</p>
             </div>
-            <Button variant="destructive" disabled>
+            <Button variant="destructive" disabled className="w-full sm:w-auto">
               Delete conversations
             </Button>
           </div>
