@@ -264,7 +264,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
-                <Button variant="outline" size="sm" className="w-full">
+                <Button variant="outline" size="sm" className="w-full min-h-[44px]">
                   Upgrade
                 </Button>
               </div>

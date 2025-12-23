@@ -30,7 +30,7 @@ export default function SettingsGeneral() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="agent-id">Agent ID</Label>
-              <Input id="agent-id" value={agentId} readOnly className="bg-muted/60" />
+              <Input id="agent-id" value={agentId} readOnly className="bg-muted/60 w-full" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="agent-name">Agent name</Label>
@@ -39,6 +39,7 @@ export default function SettingsGeneral() {
                 value={agentName}
                 onChange={(e) => setAgentName(e.target.value)}
                 placeholder="Enter agent name"
+                className="w-full"
               />
             </div>
           </div>
@@ -71,6 +72,7 @@ export default function SettingsGeneral() {
               onChange={(e) => setCreditLimit(e.target.value)}
               disabled={!creditLimitEnabled}
               placeholder="0"
+              className="w-full"
             />
           </div>
         </CardContent>
@@ -88,7 +90,7 @@ export default function SettingsGeneral() {
                 <p className="text-sm font-medium">Delete messages</p>
                 <p className="text-xs text-muted-foreground">Remove all messages for this agent.</p>
               </div>
-              <Button variant="destructive" disabled className="w-full sm:w-auto">
+              <Button variant="destructive" disabled className="w-full sm:w-auto min-h-[44px]">
                 Delete messages
               </Button>
             </div>
@@ -100,7 +102,7 @@ export default function SettingsGeneral() {
               <p className="text-sm font-medium">Delete all conversations</p>
               <p className="text-xs text-muted-foreground">Clear every conversation linked to this agent.</p>
             </div>
-            <Button variant="destructive" disabled className="w-full sm:w-auto">
+            <Button variant="destructive" disabled className="w-full sm:w-auto min-h-[44px]">
               Delete conversations
             </Button>
           </div>
