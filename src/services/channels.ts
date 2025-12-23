@@ -1,23 +1,25 @@
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 
-export type ChannelType = "webchat" | "whatsapp_cloud" | "facebook_messenger";
+export type ChannelPlatform = "webchat" | "whatsapp" | "messenger" | "email";
 
-export type AgentChannel = {
+export interface AgentChannel {
+  id: string;
   agent_id: string;
-  channel: ChannelType;
-  is_enabled: boolean;
-  workspace_id?: string;
-  created_at?: string;
-};
+  platform: ChannelPlatform;
+  config: any;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
-function assertSupabase() {
+function ensureSupabase() {
   if (!supabase || !isSupabaseConfigured) {
     throw new Error("Supabase not configured");
   }
 }
 
-export async function getChannelsForAgent(agentId: string): Promise<AgentChannel[]> {
-  assertSupabase();
+export async function getAgentChannels(agentId: string): Promise<AgentChannel[]> {
+  ensureSupabase();
 
   const { data, error } = await supabase
     .from("agent_channels")
@@ -25,52 +27,34 @@ export async function getChannelsForAgent(agentId: string): Promise<AgentChannel
     .eq("agent_id", agentId);
 
   if (error) throw error;
-
-  return (data ?? []).map((row) => ({
-    ...row,
-    channel: row.channel as ChannelType,
-    is_enabled: Boolean(row.is_enabled),
-  }));
+  return (data ?? []) as AgentChannel[];
 }
 
-export async function enableChannel(agentId: string, channel: ChannelType): Promise<AgentChannel> {
-  assertSupabase();
+export async function toggleChannel(agentId: string, platform: ChannelPlatform, isActive: boolean) {
+  ensureSupabase();
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("agent_channels")
     .upsert(
-      { agent_id: agentId, channel, is_enabled: true },
-      { onConflict: "agent_id,channel" }
-    )
-    .select()
-    .single();
+      { agent_id: agentId, platform, is_active: isActive },
+      { onConflict: "agent_id,platform" }
+    );
 
   if (error) throw error;
-  return {
-    ...data,
-    channel: data.channel as ChannelType,
-    is_enabled: Boolean(data.is_enabled),
-  } as AgentChannel;
 }
 
-export async function disableChannel(agentId: string, channel: ChannelType): Promise<AgentChannel | null> {
-  assertSupabase();
+export async function updateChannelConfig(
+  agentId: string,
+  platform: ChannelPlatform,
+  config: unknown
+) {
+  ensureSupabase();
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("agent_channels")
-    .update({ is_enabled: false })
+    .update({ config })
     .eq("agent_id", agentId)
-    .eq("channel", channel)
-    .select()
-    .maybeSingle();
+    .eq("platform", platform);
 
   if (error) throw error;
-
-  return data
-    ? ({
-        ...data,
-        channel: data.channel as ChannelType,
-        is_enabled: Boolean(data.is_enabled),
-      } as AgentChannel)
-    : null;
 }
