@@ -15,6 +15,11 @@ const getSupabaseCredentials = (): SupabaseCredentials => {
     throw new Error('Supabase URL is missing or invalid. Please set VITE_SUPABASE_URL.')
   }
 
+  const normalizedUrl = url.trim()
+  if (!normalizedUrl.startsWith('https://')) {
+    throw new Error('Supabase URL must start with https://')
+  }
+
   if (!anonKey || typeof anonKey !== 'string' || anonKey.trim().length === 0) {
     throw new Error('Supabase anon key is missing or invalid. Please set VITE_SUPABASE_ANON_KEY.')
   }
@@ -33,7 +38,7 @@ const getSupabaseCredentials = (): SupabaseCredentials => {
     throw new Error('Supabase anon key format is invalid.')
   }
 
-  return { url: url.trim(), anonKey: normalizedKey }
+  return { url: normalizedUrl, anonKey: normalizedKey }
 }
 
 const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = getSupabaseCredentials()
