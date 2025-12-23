@@ -1,145 +1,285 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Loader2 } from "lucide-react";
+
+import { supabase } from "@/integrations/supabase/client";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import InsightsExplorer from "@/components/analytics/InsightsExplorer";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
-const metrics = [
-  { label: "Messages", value: "24,580", change: "+8%" },
-  { label: "Orders", value: "1,142", change: "+4%" },
-  { label: "Requests / Inquiries", value: "3,287", change: "-2%" },
+const RANGE_OPTIONS = [
+  { label: "Last 7 days", value: 7 },
+  { label: "Last 30 days", value: 30 },
 ];
 
-const channelPerformance = [
-  { channel: "WhatsApp", messages: "12,340", response: "94%", time: "1m 12s" },
-  { channel: "Instagram", messages: "6,420", response: "92%", time: "1m 35s" },
-  { channel: "Facebook", messages: "3,120", response: "89%", time: "1m 58s" },
-  { channel: "Web Chat", messages: "2,700", response: "96%", time: "48s" },
-];
+const chartConfig = {
+  user_messages: {
+    label: "User messages",
+    color: "hsl(var(--chart-1))",
+  },
+  ai_messages: {
+    label: "AI messages",
+    color: "hsl(var(--chart-2))",
+  },
+} satisfies ChartConfig;
 
-const aiInsights = [
-  { label: "AI resolution", value: "81%", hint: "Conversations handled without human handoff" },
-  { label: "Avg. first response", value: "9.3s", hint: "Time to first reply across all channels" },
-  { label: "Suggested replies used", value: "64%", hint: "Human agents accepted AI drafts" },
-];
+type MessageRow = {
+  created_at: string;
+  role: string | null;
+  session_id?: string | null;
+  user_id?: string | null;
+};
 
-const businessInsights = [
-  "Order confirmations increased after hours by 12% week-over-week.",
-  "Ticket-type requests are down 6% after workflow updates.",
-  "Top converting channel remains WhatsApp with 2.4x lift over Instagram.",
-];
+type DailyStatRow = {
+  date: string;
+  user_messages?: number | null;
+  ai_messages?: number | null;
+  total_messages?: number | null;
+};
+
+type UsageEventRow = {
+  created_at?: string | null;
+  cost_usd?: number | null;
+};
+
+function formatDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildEmptyRange(startDate: Date, days: number) {
+  const buckets = new Map<string, { user_messages: number; ai_messages: number }>();
+  const cursor = new Date(startDate);
+  cursor.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i < days; i += 1) {
+    const dateKey = formatDateKey(cursor);
+    buckets.set(dateKey, { user_messages: 0, ai_messages: 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return buckets;
+}
+
+function aggregateMessages(
+  messages: MessageRow[],
+  startDate: Date,
+  days: number,
+): { date: string; user_messages: number; ai_messages: number }[] {
+  const buckets = buildEmptyRange(startDate, days);
+
+  messages.forEach((message) => {
+    if (!message.created_at) return;
+
+    const dateKey = message.created_at.slice(0, 10);
+    if (!buckets.has(dateKey)) return;
+
+    const bucket = buckets.get(dateKey);
+    if (!bucket) return;
+
+    const role = (message.role || "").toLowerCase();
+    if (role === "assistant" || role === "ai" || role === "model") {
+      bucket.ai_messages += 1;
+    } else {
+      bucket.user_messages += 1;
+    }
+  });
+
+  return Array.from(buckets.entries()).map(([date, counts]) => ({
+    date,
+    ...counts,
+  }));
+}
 
 export default function Analytics() {
+  const [selectedRange, setSelectedRange] = useState<number>(RANGE_OPTIONS[0]?.value ?? 7);
+  const [totalMessages, setTotalMessages] = useState(0);
+  const [activeUsers, setActiveUsers] = useState(0);
+  const [estimatedCost, setEstimatedCost] = useState(0);
+  const [chartData, setChartData] = useState<{ date: string; user_messages: number; ai_messages: number }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const rangeStartDate = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(start.getDate() - (selectedRange - 1));
+    return start;
+  }, [selectedRange]);
+
+  useEffect(() => {
+    async function fetchAnalytics() {
+      setIsLoading(true);
+      setError(null);
+
+      const startDateIso = rangeStartDate.toISOString();
+
+      try {
+        const [messagesRes, usageEventsRes, dailyStatsRes] = await Promise.all([
+          supabase
+            .from("chat_messages")
+            .select("created_at, role, session_id, user_id")
+            .gte("created_at", startDateIso)
+            .order("created_at", { ascending: true }),
+          supabase.from("usage_events").select("cost_usd, created_at").gte("created_at", startDateIso),
+          supabase
+            .from("daily_stats")
+            .select("date, user_messages, ai_messages, total_messages")
+            .gte("date", startDateIso)
+            .order("date", { ascending: true }),
+        ]);
+
+        if (messagesRes.error) {
+          throw messagesRes.error;
+        }
+
+        const messageRows = (messagesRes.data as MessageRow[]) ?? [];
+        setTotalMessages(messageRows.length);
+
+        const uniqueUsers = new Set<string>();
+        messageRows.forEach((message) => {
+          const identifier = message.session_id || message.user_id;
+          if (identifier) {
+            uniqueUsers.add(identifier);
+          }
+        });
+        setActiveUsers(uniqueUsers.size);
+
+        if (usageEventsRes.error) {
+          throw usageEventsRes.error;
+        }
+
+        const usageEvents = (usageEventsRes.data as UsageEventRow[]) ?? [];
+        const cost = usageEvents.reduce((sum, event) => sum + Number(event.cost_usd ?? 0), 0);
+        setEstimatedCost(cost);
+
+        let nextChartData: { date: string; user_messages: number; ai_messages: number }[] = [];
+
+        if (!dailyStatsRes.error && dailyStatsRes.data && dailyStatsRes.data.length > 0) {
+          const dailyRows = dailyStatsRes.data as DailyStatRow[];
+          nextChartData = buildEmptyRange(rangeStartDate, selectedRange)
+            .entries()
+            .map(([date]) => {
+              const dailyRow = dailyRows.find((row) => row.date?.slice(0, 10) === date);
+              const userMessages = Number(dailyRow?.user_messages ?? 0);
+              const aiMessages =
+                dailyRow?.ai_messages !== undefined && dailyRow?.ai_messages !== null
+                  ? Number(dailyRow.ai_messages)
+                  : Math.max(0, Number(dailyRow?.total_messages ?? 0) - userMessages);
+
+              return {
+                date,
+                user_messages: userMessages,
+                ai_messages: aiMessages,
+              };
+            });
+        } else {
+          nextChartData = aggregateMessages(messageRows, rangeStartDate, selectedRange);
+        }
+
+        setChartData(nextChartData);
+      } catch (requestError) {
+        console.error("Failed to load analytics", requestError);
+        setError("Unable to load analytics data right now. Please try again later.");
+        setTotalMessages(0);
+        setActiveUsers(0);
+        setEstimatedCost(0);
+        setChartData([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    void fetchAnalytics();
+  }, [rangeStartDate, selectedRange]);
+
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">General Analytics</h1>
-        <p className="text-sm text-muted-foreground">Operational overview of your AI agents.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">General Analytics</h1>
+          <p className="text-sm text-muted-foreground">Operational overview of your AI agents.</p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-lg border p-1">
+          {RANGE_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={selectedRange === option.value ? "default" : "ghost"}
+              className="px-3"
+              onClick={() => setSelectedRange(option.value)}
+              disabled={isLoading}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
       </div>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Analytics unavailable</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        {metrics.map((metric) => (
-          <Card key={metric.label}>
-            <CardHeader className="pb-2">
-              <CardDescription>{metric.label}</CardDescription>
-              <CardTitle className="text-2xl">{metric.value}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Badge variant="secondary" className={metric.change.startsWith("-") ? "text-destructive" : "text-emerald-600"}>
-                {metric.change}
-              </Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle>Channel performance</CardTitle>
-            <CardDescription>Volume and responsiveness by channel.</CardDescription>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Total Messages</CardDescription>
+            <CardTitle className="text-2xl">{totalMessages.toLocaleString()}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {channelPerformance.map((row) => (
-              <div key={row.channel} className="rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{row.channel}</div>
-                  <Badge variant="secondary">{row.messages} msgs</Badge>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-                  <div>Response rate: {row.response}</div>
-                  <div>Avg. response: {row.time}</div>
-                </div>
-                <Progress value={parseInt(row.response)} className="mt-3" />
-              </div>
-            ))}
-          </CardContent>
         </Card>
-
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle>AI response insights</CardTitle>
-            <CardDescription>Quality and adoption of automated replies.</CardDescription>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Active Users</CardDescription>
+            <CardTitle className="text-2xl">{activeUsers.toLocaleString()}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {aiInsights.map((insight) => (
-              <div key={insight.label} className="rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{insight.label}</div>
-                  <span className="text-lg font-semibold">{insight.value}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{insight.hint}</p>
-              </div>
-            ))}
-          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Estimated Cost</CardDescription>
+            <CardTitle className="text-2xl">${estimatedCost.toFixed(2)}</CardTitle>
+          </CardHeader>
         </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Business insights</CardTitle>
-          <CardDescription>Callouts surfaced from recent activity.</CardDescription>
+        <CardHeader className="flex flex-col gap-1">
+          <CardTitle>Daily Message Volume</CardTitle>
+          <CardDescription>Breakdown of user and AI messages per day.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {businessInsights.map((item, idx) => (
-            <div key={idx} className="flex gap-3">
-              <div className="h-2 w-2 rounded-full bg-primary mt-2" />
-              <p className="text-sm text-muted-foreground">{item}</p>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Loading analytics...</span>
             </div>
-          ))}
+          ) : chartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No message activity for this range.</p>
+          ) : (
+            <ChartContainer config={chartConfig} className="aspect-[16/7]">
+              <BarChart data={chartData}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <Bar dataKey="user_messages" fill="var(--color-user_messages)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="ai_messages" fill="var(--color-ai_messages)" radius={[4, 4, 0, 0]} />
+                <ChartLegend content={<ChartLegendContent />} />
+              </BarChart>
+            </ChartContainer>
+          )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Monthly report</CardTitle>
-            <CardDescription>Summary across channels, orders, and AI efficiency.</CardDescription>
-          </div>
-          <Button variant="outline">Generate report</Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Top channel</p>
-              <p className="text-lg font-semibold">WhatsApp</p>
-              <p className="text-xs text-muted-foreground">53% of total conversations</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Conversion rate</p>
-              <p className="text-lg font-semibold">18.4%</p>
-              <p className="text-xs text-muted-foreground">Orders from qualified inquiries</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Avg. resolution</p>
-              <p className="text-lg font-semibold">3.8 interactions</p>
-              <p className="text-xs text-muted-foreground">Messages per resolved thread</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <InsightsExplorer />
     </div>
   );
 }
