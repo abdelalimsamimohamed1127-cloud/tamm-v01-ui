@@ -1,46 +1,94 @@
 (function () {
-  var script = document.currentScript;
-  if (!script) return;
-
-  var agentId = script.getAttribute("data-agent-id");
-  if (!agentId) {
-    console.error("Tamm Widget: data-agent-id is required");
+  const script = document.currentScript;
+  if (!script) {
+    console.error("tamm embed: unable to locate currentScript");
     return;
   }
 
-  var baseUrl =
-    script.getAttribute("data-base-url") || new URL(script.src).origin;
+  const agentId = script.dataset.agentId;
+  if (!agentId) {
+    console.error("tamm embed: data-agent-id is required");
+    return;
+  }
 
-  var style = document.createElement("style");
-  style.textContent = "\n    #tamm-widget-container {\n      position: relative;\n      z-index: 9999;\n    }\n\n    #tamm-widget-launcher {\n      position: fixed;\n      bottom: 20px;\n      right: 20px;\n      width: 60px;\n      height: 60px;\n      border-radius: 9999px;\n      border: none;\n      background: #111827;\n      color: white;\n      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);\n      cursor: pointer;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      transition: transform 0.2s ease;\n    }\n\n    #tamm-widget-launcher:hover {\n      transform: translateY(-2px);\n    }\n\n    #tamm-widget-iframe {\n      position: fixed;\n      bottom: 100px;\n      right: 20px;\n      width: 380px;\n      height: 600px;\n      border: none;\n      border-radius: 16px;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);\n      background: white;\n      z-index: 9999;\n      display: none;\n    }\n\n    @media (max-width: 480px) {\n      #tamm-widget-iframe {\n        width: 100%;\n        height: 100%;\n        bottom: 0;\n        right: 0;\n        border-radius: 0;\n      }\n    }\n  ";
-  document.head.appendChild(style);
+  const baseUrl = script.dataset.baseUrl || new URL(script.src).origin;
 
-  var container = document.createElement("div");
+  if (document.getElementById("tamm-widget-container")) {
+    return;
+  }
+
+  const container = document.createElement("div");
   container.id = "tamm-widget-container";
   document.body.appendChild(container);
 
-  var chatIcon =
-    '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"26\" height=\"26\"><path d=\"M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z\"></path></svg>';
-  var closeIcon =
-    '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"22\" height=\"22\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"></line><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"></line></svg>';
+  const style = document.createElement("style");
+  style.textContent = `
+    #tamm-widget-button {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+      z-index: 9999;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    #tamm-widget-button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+    }
+    #tamm-widget-iframe {
+      position: fixed;
+      bottom: 100px;
+      right: 20px;
+      width: 380px;
+      height: 600px;
+      border-radius: 12px;
+      z-index: 9999;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+      border: none;
+      background: transparent;
+      display: none;
+    }
+    @media (max-width: 480px) {
+      #tamm-widget-iframe {
+        width: 100%;
+        height: 100%;
+        bottom: 0;
+        right: 0;
+        border-radius: 0;
+      }
+      #tamm-widget-button {
+        bottom: 16px;
+        right: 16px;
+      }
+    }
+  `;
+  document.head.appendChild(style);
 
-  var launcher = document.createElement("button");
-  launcher.id = "tamm-widget-launcher";
-  launcher.type = "button";
-  launcher.innerHTML = chatIcon;
-  container.appendChild(launcher);
+  const button = document.createElement("button");
+  button.id = "tamm-widget-button";
+  button.setAttribute("aria-label", "Open chat widget");
+  button.textContent = "💬";
 
-  var iframe = document.createElement("iframe");
+  const iframe = document.createElement("iframe");
   iframe.id = "tamm-widget-iframe";
-  iframe.title = "Tamm Chat";
-  iframe.src = baseUrl + "/chat/" + encodeURIComponent(agentId) + "?mode=embed";
-  iframe.loading = "lazy";
-  container.appendChild(iframe);
+  iframe.src = `${baseUrl}/chat/${agentId}?mode=embed`;
+  iframe.allow = "clipboard-write";
 
-  var isOpen = false;
-  launcher.addEventListener("click", function () {
+  let isOpen = false;
+  button.addEventListener("click", function () {
     isOpen = !isOpen;
     iframe.style.display = isOpen ? "block" : "none";
-    launcher.innerHTML = isOpen ? closeIcon : chatIcon;
+    button.textContent = isOpen ? "✕" : "💬";
+    button.setAttribute("aria-label", isOpen ? "Close chat widget" : "Open chat widget");
   });
+
+  container.appendChild(button);
+  container.appendChild(iframe);
 })();
