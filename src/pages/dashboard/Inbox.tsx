@@ -1,20 +1,37 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Send, Sparkles, Hand, HandMetal } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useWorkspace } from "@/hooks/useWorkspace";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Search,
+  Send,
+  Sparkles,
+  Hand,
+  HandMetal,
+  Filter,
+  Globe,
+  Facebook,
+  MessageCircle,
+  MessagesSquare,
+  Info,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   getChannels,
   getConversations,
@@ -23,34 +40,39 @@ import {
   type ConversationRow,
   type MessageRow,
   type ChannelRow,
-} from '@/services/inbox';
+} from "@/services/inbox";
 
-type LeadRow = { name: string; phone: string; email: string; channel: string; date: string };
+type StatusFilter = "open" | "closed" | "handoff";
 
-const leads: LeadRow[] = [];
+const channelIconMap: Record<string, LucideIcon> = {
+  whatsapp: MessageCircle,
+  webchat: Globe,
+  messenger: Facebook,
+};
+
+const formatTime = (value: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 
 export default function Inbox() {
   const { dir } = useLanguage();
   const { workspace } = useWorkspace();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [channels, setChannels] = useState<ChannelRow[]>([]);
-  const [selectedChannel, setSelectedChannel] = useState<string>('all');
-  const [messageTypeFilter, setMessageTypeFilter] = useState<string>('all');
-  const [typeFilters, setTypeFilters] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'inbox' | 'leads'>('inbox');
+  const [selectedChannel, setSelectedChannel] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
-
   const [messages, setMessages] = useState<MessageRow[]>([]);
-
-  const drafts = useMemo(() => messages.filter((m) => Boolean(m.is_draft)), [messages]);
-  const timeline = useMemo(() => messages.filter((m) => !Boolean(m.is_draft)), [messages]);
-  const [newMessage, setNewMessage] = useState('');
-  const [search, setSearch] = useState('');
+  const [newMessage, setNewMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [lastMessagePreview, setLastMessagePreview] = useState<Record<string, string>>({});
+  const [unreadByConversation, setUnreadByConversation] = useState<Record<string, boolean>>({});
 
   const selectedConversationRow = useMemo(
     () => conversations.find((c) => c.id === selectedConversation) ?? null,
@@ -65,54 +87,68 @@ export default function Inbox() {
   const fetchConversations = useCallback(async () => {
     const data = await getConversations(workspace.id, selectedChannel);
     setConversations(data);
-
-    if (!selectedConversation && (data ?? []).length > 0) {
-      setSelectedConversation(data[0].id);
-    }
-  }, [workspace.id, selectedChannel, selectedConversation]);
+    setSelectedConversation((prev) => prev ?? data?.[0]?.id ?? null);
+  }, [workspace.id, selectedChannel]);
 
   const fetchMessages = useCallback(
     async (conversationId: string) => {
       const data = await getConversationMessages(workspace.id, conversationId);
       setMessages(data);
+
+      const latest = data.at(-1);
+      if (latest) {
+        setLastMessagePreview((prev) => ({ ...prev, [conversationId]: latest.message_text }));
+        setUnreadByConversation((prev) => ({
+          ...prev,
+          [conversationId]: latest.direction === "in" && latest.sender_type === "customer",
+        }));
+      }
     },
     [workspace.id]
   );
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    await Promise.all([fetchChannels(), fetchConversations()]);
-    setLoading(false);
-  }, [fetchChannels, fetchConversations]);
-
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    setLoading(true);
+    Promise.all([fetchChannels(), fetchConversations()]).finally(() => setLoading(false));
+  }, [fetchChannels, fetchConversations]);
 
   useEffect(() => {
     if (!selectedConversation) return;
     void fetchMessages(selectedConversation);
   }, [selectedConversation, fetchMessages]);
 
-  useEffect(() => {
-    const typeParam = searchParams.get('type');
-    if (typeParam) {
-      setTypeFilters([typeParam]);
-    }
-  }, [searchParams]);
+  const filteredConversations = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return conversations
+      .filter((c) => c.status === statusFilter)
+      .filter((c) => (!unreadOnly ? true : unreadByConversation[c.id] ?? c.status !== "closed"))
+      .filter((c) => (s ? (c.external_user_id ?? "").toLowerCase().includes(s) : true));
+  }, [conversations, statusFilter, unreadOnly, unreadByConversation, search]);
+
+  const statusLabel: Record<StatusFilter, string> = {
+    open: dir === "rtl" ? "مفتوح" : "Open",
+    closed: dir === "rtl" ? "محلول" : "Resolved",
+    handoff: dir === "rtl" ? "تحويل" : "Handoff",
+  };
+
+  const channelLabel = (type?: string) => type?.toLowerCase() ?? "channel";
+  const ChannelIcon = ({ type }: { type?: string }) => {
+    const Icon = channelIconMap[type?.toLowerCase() ?? ""] ?? MessagesSquare;
+    return <Icon className="h-4 w-4 text-muted-foreground" />;
+  };
 
   async function sendHumanMessage() {
     if (!selectedConversationRow) return;
     if (!newMessage.trim()) return;
 
     await sendMessage(workspace.id, selectedConversationRow.id, selectedConversationRow.channel_id, {
-      direction: 'out',
-      sender_type: 'human',
+      direction: "out",
+      sender_type: "human",
       message_text: newMessage.trim(),
       is_draft: false,
     });
 
-    setNewMessage('');
+    setNewMessage("");
     await fetchMessages(selectedConversationRow.id);
     await fetchConversations();
   }
@@ -138,147 +174,62 @@ export default function Inbox() {
     await fetchMessages(selectedConversationRow.id);
   }
 
-  const filteredConversations = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    if (!s) return conversations;
-    return conversations.filter((c) => (c.external_user_id ?? '').toLowerCase().includes(s));
-  }, [conversations, search]);
+  const timeline = useMemo(() => messages.filter((m) => !Boolean(m.is_draft)), [messages]);
+  const drafts = useMemo(() => messages.filter((m) => Boolean(m.is_draft)), [messages]);
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(v) => setActiveTab(v as 'inbox' | 'leads')}
-      className="h-[calc(100vh-6rem)] flex flex-col gap-4"
-      dir={dir}
-    >
-      <Card className="p-4 space-y-3">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'القناة' : 'Channel'}</p>
-            <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
-              <SelectTrigger>
-                <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
-                {channels.map((ch) => (
-                  <SelectItem key={ch.id} value={ch.id}>
-                    {ch.name} • {ch.type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'النوع' : 'Type'}</p>
-            <ToggleGroup
-              type="multiple"
-              value={typeFilters}
-              onValueChange={(vals) => setTypeFilters(vals)}
-              className="flex flex-wrap gap-2"
-            >
-              <ToggleGroupItem value="chat" aria-label="Chat">
-                {dir === 'rtl' ? 'دردشة' : 'Chat'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="order" aria-label="Order">
-                {dir === 'rtl' ? 'طلب' : 'Order'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="ticket" aria-label="Ticket">
-                {dir === 'rtl' ? 'تذكرة' : 'Ticket'}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="inquiry" aria-label="Inquiry">
-                {dir === 'rtl' ? 'استفسار' : 'Inquiry'}
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">{dir === 'rtl' ? 'التاريخ' : 'Date range'}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                placeholder={dir === 'rtl' ? 'من' : 'From'}
-              />
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                placeholder={dir === 'rtl' ? 'إلى' : 'To'}
-              />
-            </div>
+    <div className="h-[calc(100vh-6rem)] flex flex-col gap-3" dir={dir}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+          <TabsList>
+            <TabsTrigger value="open">{statusLabel.open}</TabsTrigger>
+            <TabsTrigger value="closed">{statusLabel.closed}</TabsTrigger>
+            <TabsTrigger value="handoff">{statusLabel.handoff}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="relative">
+                <Filter className="h-4 w-4" />
+                {selectedChannel !== "all" && (
+                  <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => setSelectedChannel("all")}>
+                All channels
+              </DropdownMenuItem>
+              {channels.map((ch) => (
+                <DropdownMenuItem key={ch.id} onClick={() => setSelectedChannel(ch.id)}>
+                  {ch.name} • {ch.type}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="flex items-center gap-2">
+            <Switch id="unread-only" checked={unreadOnly} onCheckedChange={setUnreadOnly} />
+            <label htmlFor="unread-only" className="text-sm text-muted-foreground cursor-pointer">
+              {dir === "rtl" ? "غير مقروء فقط" : "Unread only"}
+            </label>
           </div>
         </div>
-      </Card>
-
-      <div className="flex items-center justify-between">
-        <TabsList>
-          <TabsTrigger value="inbox">{dir === 'rtl' ? 'الوارد' : 'Inbox'}</TabsTrigger>
-          <TabsTrigger value="leads">{dir === 'rtl' ? 'العملاء المحتملون' : 'Leads'}</TabsTrigger>
-        </TabsList>
       </div>
 
-      <TabsContent value="inbox" className="flex-1 mt-0">
-        <div className="flex flex-col lg:flex-row gap-4 h-full">
-          {/* Left: conversation list */}
-          <Card className="lg:w-80 flex flex-col">
-            <div className="p-4 border-b space-y-3">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder={dir === 'rtl' ? 'بحث...' : 'Search...'}
-                    className="pl-10 rtl:pl-3 rtl:pr-10"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Select value={selectedChannel} onValueChange={(v) => { setSelectedChannel(v); void fetchConversations(); }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={dir === 'rtl' ? 'القناة' : 'Channel'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{dir === 'rtl' ? 'كل القنوات' : 'All channels'}</SelectItem>
-                      {channels.map((ch) => (
-                        <SelectItem key={ch.id} value={ch.id}>
-                          {ch.name} • {ch.type}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={messageTypeFilter} onValueChange={setMessageTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={dir === 'rtl' ? 'نوع الرسالة' : 'Message type'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{dir === 'rtl' ? 'كل الأنواع' : 'All types'}</SelectItem>
-                      <SelectItem value="ticket">{dir === 'rtl' ? 'تذكرة' : 'Ticket'}</SelectItem>
-                      <SelectItem value="order">{dir === 'rtl' ? 'طلب' : 'Order'}</SelectItem>
-                      <SelectItem value="inquiry">{dir === 'rtl' ? 'استفسار' : 'Inquiry'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    placeholder={dir === 'rtl' ? 'من' : 'From'}
-                  />
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    placeholder={dir === 'rtl' ? 'إلى' : 'To'}
-                  />
-                </div>
-              </div>
+      <div className="flex gap-4 flex-1 overflow-hidden">
+        <Card className="w-full lg:w-80 flex flex-col">
+          <div className="p-3 border-b space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={dir === "rtl" ? "بحث..." : "Search..."}
+                className="pl-10 rtl:pl-3 rtl:pr-10"
+              />
             </div>
 
             {drafts.length > 0 && (
@@ -286,11 +237,11 @@ export default function Inbox() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4" />
-                    <div className="text-sm font-medium">{dir === 'rtl' ? 'اقتراحات الذكاء الاصطناعي' : 'AI Suggestions'}</div>
+                    <div className="text-sm font-medium">{dir === "rtl" ? "اقتراحات" : "AI Suggestions"}</div>
                     <Badge variant="secondary">{drafts.length}</Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {dir === 'rtl' ? 'لن تُرسل تلقائيًا' : 'Not sent automatically'}
+                    {dir === "rtl" ? "لن تُرسل تلقائيًا" : "Not sent automatically"}
                   </div>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -299,7 +250,7 @@ export default function Inbox() {
                       <div className="text-sm whitespace-pre-wrap">{d.message_text}</div>
                       <div className="mt-2 flex justify-end gap-2">
                         <Button size="sm" variant="outline" onClick={() => void sendDraft(d.id)}>
-                          {dir === 'rtl' ? 'إرسال' : 'Send'}
+                          {dir === "rtl" ? "إرسال" : "Send"}
                         </Button>
                       </div>
                     </div>
@@ -307,81 +258,121 @@ export default function Inbox() {
                 </div>
               </Card>
             )}
+          </div>
 
-            <ScrollArea className="flex-1">
-              {loading ? (
-                <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'تحميل...' : 'Loading...'}</div>
-              ) : filteredConversations.length === 0 ? (
-                <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'لا توجد محادثات' : 'No conversations'}</div>
-              ) : (
-                <div className="p-2">
-                  {filteredConversations.map((conv) => (
+          <ScrollArea className="flex-1">
+            {loading ? (
+              <div className="p-3 space-y-3">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-2/3" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="p-6 text-sm text-muted-foreground">
+                {dir === "rtl" ? "لا توجد محادثات" : "No conversations"}
+              </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {filteredConversations.map((conv) => {
+                  const preview = lastMessagePreview[conv.id] ?? (conv.channels?.name ?? "No messages yet");
+                  const isActive = selectedConversation === conv.id;
+                  const isUnread = unreadByConversation[conv.id] ?? conv.status !== "closed";
+                  return (
                     <motion.button
                       key={conv.id}
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                       onClick={() => setSelectedConversation(conv.id)}
                       className={cn(
-                        'w-full p-3 rounded-lg text-left flex items-center gap-3 hover:bg-muted/50 transition',
-                        selectedConversation === conv.id && 'bg-muted'
+                        "w-full p-3 rounded-lg text-left flex items-center gap-3 transition",
+                        isActive ? "bg-muted" : "hover:bg-muted/50"
                       )}
                     >
                       <Avatar className="h-10 w-10">
-                        <AvatarFallback>{(conv.external_user_id ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                        <AvatarFallback>{(conv.external_user_id ?? "U").slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium truncate">{conv.external_user_id}</p>
-                          <Badge variant={conv.status === 'handoff' ? 'destructive' : 'secondary'}>
-                            {conv.status}
-                          </Badge>
+                          <p className="font-semibold truncate">{conv.external_user_id}</p>
+                          <span className="text-xs text-muted-foreground">{formatTime(conv.updated_at)}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {(conv.channels?.name ?? 'Channel')} • {new Date(conv.updated_at).toLocaleString()}
-                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <ChannelIcon type={conv.channels?.type} />
+                          <p className="truncate">{preview}</p>
+                        </div>
+                        {conv.status === "handoff" && (
+                          <Badge variant="destructive" className="text-[10px]">
+                            {dir === "rtl" ? "يتطلب بشري" : "Human Needed"}
+                          </Badge>
+                        )}
                       </div>
+                      {isUnread && <span className="h-2 w-2 rounded-full bg-primary" />}
                     </motion.button>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </Card>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+        </Card>
 
-        {/* Right: messages */}
         <Card className="flex-1 flex flex-col">
           {!selectedConversationRow ? (
-            <div className="p-6 text-sm text-muted-foreground">{dir === 'rtl' ? 'اختر محادثة' : 'Select a conversation'}</div>
+            <div className="p-6 text-sm text-muted-foreground">
+              {dir === "rtl" ? "اختر محادثة" : "Select a conversation"}
+            </div>
           ) : (
             <>
               <div className="p-4 border-b flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-9 w-9">
-                    <AvatarFallback>{(selectedConversationRow.external_user_id ?? 'U').slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback>
+                      {(selectedConversationRow.external_user_id ?? "U").slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
                   </Avatar>
                   <div>
                     <div className="font-semibold">{selectedConversationRow.external_user_id}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {selectedConversationRow.channels?.name ?? 'Channel'} • {selectedConversationRow.channels?.type}
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      <ChannelIcon type={selectedConversationRow.channels?.type} />
+                      <span>
+                        {selectedConversationRow.channels?.name ?? "Channel"} •{" "}
+                        {channelLabel(selectedConversationRow.channels?.type)}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  {selectedConversationRow.status === 'handoff' ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedConversationRow.status === "handoff" ? (
                     <Button size="sm" variant="outline" onClick={releaseHandoff}>
                       <HandMetal className="h-4 w-4 mr-2" />
-                      {dir === 'rtl' ? 'إلغاء التحويل' : 'Release handoff'}
+                      {dir === "rtl" ? "إلغاء التحويل" : "Release handoff"}
                     </Button>
                   ) : (
                     <Button size="sm" variant="outline" onClick={requestHandoff}>
                       <Hand className="h-4 w-4 mr-2" />
-                      {dir === 'rtl' ? 'تحويل لبشر' : 'Handoff to human'}
+                      {dir === "rtl" ? "تحويل لبشر" : "Handoff to human"}
                     </Button>
                   )}
 
                   <Button size="sm" variant="secondary" onClick={generateDraft}>
                     <Sparkles className="h-4 w-4 mr-2" />
-                    {dir === 'rtl' ? 'اقتراح رد' : 'Draft reply'}
+                    {dir === "rtl" ? "اقتراح رد" : "Draft reply"}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDetailsOpen((prev) => !prev)}
+                    className="flex items-center gap-2"
+                  >
+                    <Info className="h-4 w-4" />
+                    {dir === "rtl" ? (detailsOpen ? "إخفاء التفاصيل" : "عرض التفاصيل") : detailsOpen ? "Hide details" : "Show details"}
                   </Button>
                 </div>
               </div>
@@ -389,23 +380,21 @@ export default function Inbox() {
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-3">
                   {timeline.map((m) => {
-                    const isMe = m.sender_type !== 'customer';
+                    const isMe = m.sender_type !== "customer";
                     const isDraft = Boolean(m.is_draft);
                     return (
-                      <div
-                        key={m.id}
-                        className={cn('flex', isMe ? 'justify-end' : 'justify-start')}
-                      >
+                      <div key={m.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
                         <div
                           className={cn(
-                            'max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap',
-                            isMe ? 'bg-primary text-primary-foreground' : 'bg-muted',
-                            isDraft && 'ring-2 ring-amber-400 bg-amber-50 text-amber-900'
+                            "max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap",
+                            isMe ? "bg-primary text-primary-foreground" : "bg-muted",
+                            isDraft && "ring-2 ring-amber-400 bg-amber-50 text-amber-900"
                           )}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <span className="text-xs opacity-80">
-                              {m.sender_type}{isDraft ? ' (draft)' : ''}
+                              {m.sender_type}
+                              {isDraft ? " (draft)" : ""}
                             </span>
                             <span className="text-[10px] opacity-70">{new Date(m.created_at).toLocaleTimeString()}</span>
                           </div>
@@ -429,9 +418,9 @@ export default function Inbox() {
                   <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={dir === 'rtl' ? 'اكتب رد الفريق...' : 'Type a team reply...'}
+                    placeholder={dir === "rtl" ? "اكتب رد الفريق..." : "Type a team reply..."}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') void sendHumanMessage();
+                      if (e.key === "Enter") void sendHumanMessage();
                     }}
                   />
                   <Button onClick={sendHumanMessage}>
@@ -439,73 +428,77 @@ export default function Inbox() {
                   </Button>
                 </div>
 
-                {selectedConversationRow.status === 'handoff' && (
+                {selectedConversationRow.status === "handoff" && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {dir === 'rtl'
-                      ? 'المحادثة في وضع تحويل لبشر: الذكاء الاصطناعي لن يرسل ردود تلقائيًا.'
-                      : 'Conversation is in handoff: AI will not send automatic replies.'}
+                    {dir === "rtl"
+                      ? "المحادثة في وضع تحويل لبشر: الذكاء الاصطناعي لن يرسل ردود تلقائيًا."
+                      : "Conversation is in handoff: AI will not send automatic replies."}
                   </p>
                 )}
               </div>
             </>
           )}
         </Card>
-      </div>
-    </TabsContent>
 
-    <TabsContent value="leads" className="flex-1 mt-0">
-      <Card className="h-full flex flex-col">
-        <div className="p-4 border-b flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold">{dir === 'rtl' ? 'العملاء المحتملون' : 'Leads'}</h3>
-            <p className="text-xs text-muted-foreground">
-              {dir === 'rtl' ? 'عرض وتحميل بيانات العملاء المحتملين' : 'View and export lead activity'}
-            </p>
-          </div>
-          <Button variant="outline">{dir === 'rtl' ? 'تصدير' : 'Export'}</Button>
-        </div>
-        <div className="p-4 flex-1 flex flex-col">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dir === 'rtl' ? 'الاسم' : 'Name'}</TableHead>
-                <TableHead>{dir === 'rtl' ? 'الهاتف' : 'Phone'}</TableHead>
-                <TableHead>{dir === 'rtl' ? 'البريد الإلكتروني' : 'Email'}</TableHead>
-                <TableHead>{dir === 'rtl' ? 'القناة' : 'Channel'}</TableHead>
-                <TableHead>{dir === 'rtl' ? 'التاريخ' : 'Date'}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leads.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
-                      <Sparkles className="h-8 w-8 text-muted-foreground" />
-                      <div className="text-sm font-medium">{dir === 'rtl' ? 'لا توجد بيانات بعد' : 'No leads yet'}</div>
-                      <p className="text-xs text-muted-foreground max-w-md">
-                        {dir === 'rtl'
-                          ? 'سيظهر العملاء المحتملون هنا حالما تبدأ المحادثات الجديدة. يمكنك التصدير عند توفر البيانات.'
-                          : 'Leads will appear here as new conversations start. Export will be available once data is captured.'}
-                      </p>
+        {detailsOpen && selectedConversationRow && (
+          <Card className="hidden xl:flex w-80 flex-col">
+            <div className="p-4 border-b">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback>
+                    {(selectedConversationRow.external_user_id ?? "U").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="font-semibold">{selectedConversationRow.external_user_id}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedConversationRow.channels?.name ?? "Channel"} • {channelLabel(selectedConversationRow.channels?.type)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <ScrollArea className="flex-1 p-4 space-y-6">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-muted-foreground">
+                  {dir === "rtl" ? "تفاصيل العميل" : "Customer details"}
+                </div>
+                <div className="rounded-lg border p-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">{dir === "rtl" ? "اسم" : "Name"}</span>
+                    <span className="font-medium">{selectedConversationRow.external_user_id}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">{dir === "rtl" ? "القناة" : "Channel"}</span>
+                    <div className="flex items-center gap-2">
+                      <ChannelIcon type={selectedConversationRow.channels?.type} />
+                      <span>{selectedConversationRow.channels?.name ?? "—"}</span>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                leads.map((lead) => (
-                  <TableRow key={`${lead.email}-${lead.date}`}>
-                    <TableCell className="font-medium">{lead.name}</TableCell>
-                    <TableCell>{lead.phone}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.channel}</TableCell>
-                    <TableCell>{lead.date}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
-    </TabsContent>
-  </Tabs>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">{dir === "rtl" ? "الحالة" : "Status"}</span>
+                    <Badge variant="secondary" className="capitalize">
+                      {selectedConversationRow.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+                  <span>{dir === "rtl" ? "الطلبات الأخيرة" : "Recent orders"}</span>
+                  <Badge variant="outline" className="text-[11px]">
+                    {dir === "rtl" ? "قريباً" : "Soon"}
+                  </Badge>
+                </div>
+                <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                  {dir === "rtl" ? "لا توجد طلبات متاحة بعد." : "No orders available yet."}
+                </div>
+              </div>
+            </ScrollArea>
+          </Card>
+        )}
+      </div>
+    </div>
   );
 }
