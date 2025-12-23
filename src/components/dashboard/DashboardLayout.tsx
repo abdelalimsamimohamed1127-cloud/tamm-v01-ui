@@ -214,7 +214,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </Button>
         </div>
 
-        <NavContent />
+    return (
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="hidden md:flex items-center gap-2 h-9 px-3"
+            >
+              <Bot className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium truncate max-w-[140px]">{currentAgent?.name ?? "Select agent"}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Switch agent</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {agentOptions}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Credits & Agent Status */}
         <div className="px-3 pb-4 space-y-3">
