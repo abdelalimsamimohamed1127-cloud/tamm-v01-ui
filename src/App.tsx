@@ -1,7 +1,6 @@
 // src/App.tsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "@/pages/Dashboard";
-import Overview from "@/pages/dashboard/Overview";
 import Channels from "@/pages/dashboard/Channels";
 import Settings, { SettingsIndexRedirect } from "@/pages/dashboard/Settings";
 import SettingsGeneral from "@/pages/dashboard/SettingsGeneral";
@@ -56,11 +55,11 @@ export default function App() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       {/* Keep legacy /account entry, but render the same in-dashboard page */}
       <Route path="/account" element={<Navigate to="/dashboard/account" replace />} />
-      
+
 
       <Route path="/dashboard/*" element={<Dashboard />}>
-        <Route index element={<Navigate to="overview" replace />} />
-        <Route path="overview" element={<Overview />} />
+        <Route index element={<Navigate to="analytics/general" replace />} />
+        <Route path="overview" element={<Navigate to="analytics/general" replace />} />
         <Route path="channels" element={<Channels />} />
         <Route path="ai-agent" element={<AIAgent />} />
         <Route path="inbox" element={<Inbox />} />
@@ -69,7 +68,10 @@ export default function App() {
         <Route path="automations" element={<Automations />} />
         <Route path="evals" element={<Evals />} />
         <Route path="insights" element={<Insights />} />
-        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics" element={<Navigate to="analytics/general" replace />} />
+        <Route path="analytics/general" element={<Analytics />} />
+        <Route path="analytics/evals" element={<Evals />} />
+        <Route path="analytics/insights" element={<Insights />} />
 
         {/* Profile menu destinations */}
         <Route path="account" element={<Account />} />
