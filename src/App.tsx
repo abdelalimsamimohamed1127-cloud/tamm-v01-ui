@@ -74,9 +74,9 @@ export default function App() {
         <Route path="analytics/insights" element={<Insights />} />
 
         {/* Profile menu destinations */}
-        <Route path="account" element={<Account />} />
-        <Route path="manage-agents" element={<ManageAgents />} />
-        <Route path="workspace-settings" element={<WorkspaceSettings />} />
+        <Route path="account" element={<Navigate to="/dashboard?dialog=account" replace />} />
+        <Route path="manage-agents" element={<Navigate to="/dashboard?dialog=agents" replace />} />
+        <Route path="workspace-settings" element={<Navigate to="/dashboard?dialog=workspace" replace />} />
         <Route path="settings/*" element={<Settings />}>
           <Route index element={<SettingsIndexRedirect />} />
           <Route path="general" element={<SettingsGeneral />} />

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -58,6 +58,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import AccountDialogContent from '@/components/settings-dialogs/AccountDialogContent';
+import WorkspaceDialogContent from '@/components/settings-dialogs/WorkspaceDialogContent';
+import ManageAgentsDialogContent from '@/components/settings-dialogs/ManageAgentsDialogContent';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -110,6 +113,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { workspace } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
@@ -117,6 +121,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | null>(null);
   const agentCredits = {
     used: 2,
     limit: 50,
@@ -125,6 +130,31 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleSignOut = async () => {
     await signOut();
+  };
+
+  useEffect(() => {
+    const dialog = searchParams.get("dialog");
+    if (dialog === "account" || dialog === "workspace" || dialog === "agents") {
+      setDialogOpen(dialog);
+    }
+  }, [searchParams]);
+
+  const openDialog = (dialog: "account" | "workspace" | "agents") => {
+    setDialogOpen(dialog);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("dialog", dialog);
+      return next;
+    });
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("dialog");
+      return next;
+    });
   };
 
   const isActive = (path: string) => location.pathname === path;
