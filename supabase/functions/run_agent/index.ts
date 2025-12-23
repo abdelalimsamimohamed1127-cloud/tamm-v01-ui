@@ -30,6 +30,15 @@ function roughTokens(text: string) {
   return Math.max(1, Math.ceil((text?.length ?? 0) / 4));
 }
 
+function safeJsonParse(input: string) {
+  try {
+    const cleaned = input.trim().replace(/^```json/i, "").replace(/```$/i, "");
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
 async function extractOrder(provider: any, text: string) {
   const sys = `Extract an order from the conversation.
 Return ONLY valid JSON:
@@ -68,6 +77,46 @@ Return ONLY valid JSON:
     // ignore
   }
   return null;
+}
+
+const sentimentScoreMap: Record<string, number> = {
+  positive: 1,
+  neutral: 0,
+  negative: -1,
+};
+
+async function extractConversationInsights(provider: any, text: string) {
+  const sys = `Analyze ONLY the last user message below.
+Return ONLY valid JSON with this shape:
+{
+  "sentiment": "positive" | "neutral" | "negative",
+  "topic": "inquiry" | "order" | "shipping" | "complaint" | "other",
+  "urgency": "high" | "low"
+}`;
+
+  const out = await provider.chat(
+    [
+      { role: "system", content: sys },
+      { role: "user", content: text },
+    ],
+    { temperature: 0, maxTokens: 120 },
+  );
+
+  const parsed = safeJsonParse(String(out));
+  if (!parsed) return null;
+
+  const sentiment: "positive" | "neutral" | "negative" | undefined = parsed.sentiment;
+  const topic: string | undefined = parsed.topic;
+  const urgency: "high" | "low" | undefined = parsed.urgency;
+
+  if (!sentiment || !topic || !urgency) return null;
+
+  return {
+    sentiment,
+    topic,
+    urgency,
+    score: sentimentScoreMap[sentiment] ?? null,
+  };
 }
 
 serve(async (req) => {
@@ -131,6 +180,21 @@ serve(async (req) => {
       role: m.sender_type === "customer" ? "user" : "assistant",
       content: m.message_text,
     }));
+
+    const enrichmentPromise = lastUserText
+      ? extractConversationInsights(provider, lastUserText)
+          .then(async (result) => {
+            if (!result) return;
+            const { sentiment, topic, urgency, score } = result;
+            await supabase.from("conversations").update({
+              sentiment_score: typeof score === "number" ? score : null,
+              primary_topic: topic ?? null,
+              tags: topic ? [topic] : [],
+              urgency: urgency ?? null,
+            }).eq("id", conversation_id);
+          })
+          .catch(() => {})
+      : Promise.resolve();
 
     // RAG retrieval
     let contextText = "";

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -41,7 +41,7 @@ import {
   ShoppingCart,
   LifeBuoy,
   Workflow,
-  BarChart3,
+  BarChart,
   ClipboardList,
   Settings,
   ChevronLeft,
@@ -52,21 +52,50 @@ import {
   Menu,
   ChevronDown,
   BadgePlus,
+  Activity,
+  CheckCircle2,
+  Lightbulb,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import AccountDialogContent from '@/components/settings-dialogs/AccountDialogContent';
+import WorkspaceDialogContent from '@/components/settings-dialogs/WorkspaceDialogContent';
+import ManageAgentsDialogContent from '@/components/settings-dialogs/ManageAgentsDialogContent';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-const navItems = [
+type NavChildItem = {
+  key: string;
+  path: string;
+  icon?: LucideIcon;
+};
+
+type NavItem = {
+  key: string;
+  icon: LucideIcon;
+  path?: string;
+  children?: NavChildItem[];
+};
+
+const navItems: NavItem[] = [
   { key: 'channels', icon: Radio, path: '/dashboard/channels' },
   { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
   { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
   { key: 'automations', icon: Workflow, path: '/dashboard/automations' },
   { key: 'evals', icon: ClipboardList, path: '/dashboard/evals' },
   { key: 'insights', icon: Sparkles, path: '/dashboard/insights' },
-  { key: 'analytics', icon: BarChart3, path: '/dashboard/analytics' },
+  {
+    key: 'analytics',
+    icon: BarChart,
+    path: '/dashboard/analytics/general',
+    children: [
+      { key: 'analytics.general', path: '/dashboard/analytics/general', icon: Activity },
+      { key: 'analytics.evals', path: '/dashboard/analytics/evals', icon: CheckCircle2 },
+      { key: 'analytics.insights', path: '/dashboard/analytics/insights', icon: Lightbulb },
+    ],
+  },
   {
     key: 'settings',
     icon: Settings,
@@ -84,6 +113,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { workspace } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
@@ -91,6 +121,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | null>(null);
   const agentCredits = {
     used: 2,
     limit: 50,
@@ -101,11 +132,39 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     await signOut();
   };
 
+  useEffect(() => {
+    const dialog = searchParams.get("dialog");
+    if (dialog === "account" || dialog === "workspace" || dialog === "agents") {
+      setDialogOpen(dialog);
+    }
+  }, [searchParams]);
+
+  const openDialog = (dialog: "account" | "workspace" | "agents") => {
+    setDialogOpen(dialog);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("dialog", dialog);
+      return next;
+    });
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("dialog");
+      return next;
+    });
+  };
+
   const isActive = (path: string) => location.pathname === path;
   const isParentActive = (item: NavItem) =>
     item.children?.some((child) => location.pathname.startsWith(child.path));
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ settings: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    analytics: location.pathname.startsWith('/dashboard/analytics'),
+    settings: true,
+  });
 
   const NavContent = () => (
     <nav className="flex-1 px-3 py-4 space-y-1">
@@ -184,6 +243,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                         : 'text-sidebar-foreground hover:bg-sidebar-accent'
                     )}
                   >
+                    {child.icon && <child.icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
                     <span className="truncate">{t(`dashboard.${child.key}`)}</span>
                   </Link>
                 ))}
@@ -431,17 +491,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span className="capitalize">{workspace?.plan || 'Free'} Plan</span>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to="/dashboard/manage-agents" className="flex items-center">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openDialog("agents");
+                  }}
+                >
+                  <div className="flex items-center">
                     <Users className="h-4 w-4 mr-2" />
                     Manage agents
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/dashboard/account" className="flex items-center">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openDialog("account");
+                  }}
+                >
+                  <div className="flex items-center">
                     <User className="h-4 w-4 mr-2" />
                     Account settings
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -458,7 +528,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
-                    setWorkspaceSettingsOpen(true);
+                    openDialog("workspace");
                   }}
                 >
                   <div className="flex items-center">
@@ -540,13 +610,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <DialogTrigger asChild>
                 <span />
               </DialogTrigger>
-              <DialogContent className="sm:max-w-5xl">
-                <DialogHeader>
-                  <DialogTitle>Workspace settings</DialogTitle>
-                  <DialogDescription>
-                    Manage workspace details without leaving your current page.
-                  </DialogDescription>
-                </DialogHeader>
+            <DialogContent className="sm:max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>Workspace settings</DialogTitle>
+                <DialogDescription>
+                  Manage workspace details without leaving your current page.
+                </DialogDescription>
+              </DialogHeader>
                 <Tabs defaultValue="general" className="space-y-4">
                   <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="general">General</TabsTrigger>
@@ -571,6 +641,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </Dialog>
           </div>
         </header>
+
+        <Dialog open={dialogOpen !== null} onOpenChange={(open) => !open && closeDialog()}>
+          <DialogContent className="sm:max-w-4xl p-0">
+            {dialogOpen === "account" && <AccountDialogContent />}
+            {dialogOpen === "workspace" && <WorkspaceDialogContent />}
+            {dialogOpen === "agents" && <ManageAgentsDialogContent />}
+          </DialogContent>
+        </Dialog>
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">

@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import InsightsExplorer from "@/components/analytics/InsightsExplorer";
 
 const metrics = [
   { label: "Messages", value: "24,580", change: "+8%" },
@@ -32,8 +33,8 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Analytics</h1>
-        <p className="text-sm text-muted-foreground">Performance snapshots across channels and AI responses.</p>
+        <h1 className="text-2xl font-semibold">General Analytics</h1>
+        <p className="text-sm text-muted-foreground">Operational overview of your AI agents.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -137,6 +138,8 @@ export default function Analytics() {
           </div>
         </CardContent>
       </Card>
+
+      <InsightsExplorer />
     </div>
   );
 }
