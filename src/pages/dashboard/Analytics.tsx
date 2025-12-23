@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import InsightsExplorer from "@/components/analytics/InsightsExplorer";
 
 const metrics = [
   { label: "Messages", value: "24,580", change: "+8%" },
@@ -137,6 +138,8 @@ export default function Analytics() {
           </div>
         </CardContent>
       </Card>
+
+      <InsightsExplorer />
     </div>
   );
 }
