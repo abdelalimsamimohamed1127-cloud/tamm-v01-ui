@@ -30,6 +30,7 @@ import AdminDocs from "@/pages/admin/Docs";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Landing from "@/pages/Landing";
+import ChatWindow from "@/pages/public/ChatWindow";
 
 
 
@@ -51,6 +52,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/chat/:agentId" element={<ChatWindow />} />
       <Route path="/login" element={<Login />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       {/* Keep legacy /account entry, but render the same in-dashboard page */}
