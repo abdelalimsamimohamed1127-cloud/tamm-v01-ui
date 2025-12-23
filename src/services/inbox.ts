@@ -1,18 +1,8 @@
-import { supabase } from '@/integrations/supabase/client'
-
-export type ConversationStatus =
-  | 'open'
-  | 'handoff_requested'
-  | 'handoff_active'
-  | 'resolved'
-  | 'closed'
-
 export type ConversationMessage = {
   id: string
-  sender: 'user' | 'assistant' | 'system'
+  sender: 'user' | 'assistant'
   content: string
   timestamp: string
-  is_internal_note?: boolean
 }
 
 export type Conversation = {
@@ -20,11 +10,10 @@ export type Conversation = {
   customer_name: string
   last_message: string
   channel: 'webchat' | 'whatsapp' | 'messenger'
-  status: ConversationStatus | 'handoff'
+  status: 'open' | 'resolved' | 'handoff'
   urgency: 'low' | 'high'
   sentiment: 'neutral' | 'negative'
   updated_at: string
-  assigned_to?: string | null
   messages?: ConversationMessage[]
 }
 
@@ -68,7 +57,6 @@ const mockConversations: Conversation[] = [
     urgency: 'low',
     sentiment: 'neutral',
     updated_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    assigned_to: 'user-123',
     messages: [
       {
         id: 'm4',
@@ -88,13 +76,6 @@ const mockConversations: Conversation[] = [
         content: 'Thanks for the quick response!',
         timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       },
-      {
-        id: 'm6-note',
-        sender: 'assistant',
-        content: 'Followed up with reset steps and confirmed resolution.',
-        timestamp: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
-        is_internal_note: true,
-      },
     ],
   },
   {
@@ -102,7 +83,7 @@ const mockConversations: Conversation[] = [
     customer_name: '+1 (555) 123-4567',
     last_message: 'Customer requested a human handoff.',
     channel: 'messenger',
-    status: 'handoff_requested',
+    status: 'handoff',
     urgency: 'high',
     sentiment: 'neutral',
     updated_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
@@ -126,11 +107,10 @@ const mockConversations: Conversation[] = [
     customer_name: 'Priya Desai',
     last_message: 'Do you support international shipping?',
     channel: 'webchat',
-    status: 'handoff_active',
+    status: 'open',
     urgency: 'low',
     sentiment: 'neutral',
     updated_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    assigned_to: 'user-123',
     messages: [
       {
         id: 'm9',
@@ -144,53 +124,10 @@ const mockConversations: Conversation[] = [
         content: 'Yes, we ship to most countries. Which destination do you have in mind?',
         timestamp: new Date(Date.now() - 4.5 * 60 * 60 * 1000).toISOString(),
       },
-      {
-        id: 'm11',
-        sender: 'assistant',
-        content: 'Holding for human review before confirming policy.',
-        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        is_internal_note: true,
-      },
     ],
   },
 ]
 
 export async function getConversations(status: Conversation['status']): Promise<Conversation[]> {
-  const normalizedStatuses =
-    status === 'handoff'
-      ? ['handoff', 'handoff_requested', 'handoff_active']
-      : [status]
-  return Promise.resolve(mockConversations.filter((conversation) => normalizedStatuses.includes(conversation.status)))
-}
-
-export async function assignConversation(sessionId: string, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('chat_sessions')
-    .update({ assigned_to: userId, status: 'handoff_active' })
-    .eq('id', sessionId)
-
-  if (error) {
-    throw error
-  }
-}
-
-export async function resolveConversation(sessionId: string): Promise<void> {
-  const { error } = await supabase.from('chat_sessions').update({ status: 'resolved' }).eq('id', sessionId)
-
-  if (error) {
-    throw error
-  }
-}
-
-export async function sendInternalNote(sessionId: string, content: string): Promise<void> {
-  const { error } = await supabase.from('chat_messages').insert({
-    session_id: sessionId,
-    role: 'assistant',
-    content,
-    is_internal_note: true,
-  })
-
-  if (error) {
-    throw error
-  }
+  return Promise.resolve(mockConversations.filter((conversation) => conversation.status === status))
 }
