@@ -201,6 +201,54 @@ serve(async (req) => {
             workspace_id: workspaceId,
             amount: costUsd,
           }).catch(() => {});
+
+          const runClassification = async () => {
+            try {
+              const result = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                stream: false,
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "Analyze the last user message and the assistant reply.\nReturn ONLY valid JSON in this format:\n\n{\n  sentiment: 'positive' | 'neutral' | 'negative',\n  topic: string (max 3 words),\n  urgency: 'low' | 'medium' | 'high'\n}",
+                  },
+                  { role: "user", content: message },
+                  { role: "assistant", content: fullText },
+                ],
+              });
+
+              const raw = result.choices?.[0]?.message?.content ?? "";
+              if (!raw) return;
+
+              const parsed = JSON.parse(raw) as {
+                sentiment?: string;
+                topic?: string;
+                urgency?: string;
+              };
+
+              const payload: Record<string, string | undefined> = {
+                sentiment: parsed.sentiment,
+                topic: parsed.topic,
+                urgency: parsed.urgency,
+              };
+
+              await supabase
+                .from("chat_sessions")
+                .update(payload)
+                .eq("id", session_id)
+                .throwOnError();
+            } catch (_) {
+              // Silently ignore enrichment failures
+            }
+          };
+
+          const runtime = (globalThis as any)?.EdgeRuntime;
+          if (runtime?.waitUntil) {
+            runtime.waitUntil(runClassification());
+          } else {
+            runClassification().catch(() => {});
+          }
         } catch (err) {
           controller.error(err);
         }
