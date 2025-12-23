@@ -1,18 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
+import { useChat } from "ai/react";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
-import { chatWithAgent } from "@/lib/kb";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-
-type Message = { role: "user" | "assistant"; content: string };
 
 export default function ChatWindow() {
   const { agentId } = useParams();
   const [agentName, setAgentName] = useState("Chat");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [authHeaders, setAuthHeaders] = useState<HeadersInit | undefined>();
+
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    error,
+  } = useChat({
+    api: "/functions/v1/run_agent",
+    body: {
+      agent_id: agentId,
+      session_id: sessionId,
+    },
+    headers: authHeaders,
+  });
 
   useEffect(() => {
     let active = true;
@@ -36,27 +50,56 @@ export default function ChatWindow() {
     };
   }, [agentId]);
 
+  useEffect(() => {
+    const key = agentId ? `chat_session_${agentId}` : "chat_session_default";
+    const existing = localStorage.getItem(key);
+    if (existing) {
+      setSessionId(existing);
+      return;
+    }
+
+    const newSessionId = crypto.randomUUID();
+    localStorage.setItem(key, newSessionId);
+    setSessionId(newSessionId);
+  }, [agentId]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadHeaders() {
+      if (!isSupabaseConfigured) return;
+      const { data } = await supabase.auth.getSession();
+      if (!active) return;
+      const accessToken = data?.session?.access_token;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      } else if (anonKey) {
+        headers.apikey = anonKey;
+      }
+
+      setAuthHeaders(headers);
+    }
+
+    void loadHeaders();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const avatarLetter = useMemo(() => agentName.charAt(0).toUpperCase(), [agentName]);
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || !agentId || sending) return;
-
-    const nextMessages = [...messages, { role: "user", content: text } as Message];
-    setMessages(nextMessages);
-    setInput("");
-    setSending(true);
-
-    try {
-      const reply = await chatWithAgent(agentId, text);
-      setMessages((prev) => [...prev, { role: "assistant", content: reply.reply || "" }]);
-    } catch (error: any) {
-      const description = error?.message || "Something went wrong.";
-      setMessages((prev) => [...prev, { role: "assistant", content: description }]);
-    } finally {
-      setSending(false);
+  const handleFormSubmit = (event?: FormEvent<HTMLFormElement>) => {
+    if (!agentId || !sessionId) {
+      event?.preventDefault();
+      return;
     }
-  }
+    void handleSubmit(event);
+  };
 
   return (
     <div className="h-screen w-screen bg-background text-foreground flex flex-col">
@@ -81,11 +124,11 @@ export default function ChatWindow() {
           </div>
         ) : (
           messages.map((m, idx) => (
-            <div key={idx} className="flex">
+            <div key={idx} className={`flex ${m.role === "assistant" ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                  m.role === "user"
-                    ? "ml-auto bg-primary text-primary-foreground"
+                  m.role === "assistant"
+                    ? "bg-primary text-primary-foreground"
                     : "bg-white shadow-sm"
                 }`}
               >
@@ -94,26 +137,33 @@ export default function ChatWindow() {
             </div>
           ))
         )}
+        {error ? <p className="text-xs text-destructive">{error.message}</p> : null}
       </main>
 
       <footer className="border-t bg-background p-3">
-        <div className="flex gap-2">
+        <form className="flex gap-2" onSubmit={handleFormSubmit}>
           <Input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             placeholder="Type your message..."
-            disabled={!agentId || sending}
+            disabled={!agentId || !sessionId || isLoading}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                void handleSend();
+                void handleFormSubmit();
               }
             }}
           />
-          <Button onClick={() => void handleSend()} disabled={!agentId || sending || !input.trim()}>
-            {sending ? "Sending..." : "Send"}
-          </Button>
-        </div>
+          {isLoading ? (
+            <Button type="button" variant="secondary" onClick={stop}>
+              Stop
+            </Button>
+          ) : (
+            <Button type="submit" disabled={!agentId || !sessionId || isLoading || !input.trim()}>
+              Send
+            </Button>
+          )}
+        </form>
       </footer>
     </div>
   );
