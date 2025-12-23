@@ -22,9 +22,9 @@ import {
   Info,
   Loader2,
 } from "lucide-react";
-import { useWorkspace } from "@/hooks/useWorkspace";
 import { useToast } from "@/hooks/use-toast";
-import { Agent, deactivateAgent, getAgentForWorkspace, reactivateAgent } from "@/services/agents";
+import { Agent, deactivateAgent, reactivateAgent } from "@/services/agents";
+import { useAgentContext } from "@/contexts/AgentContext";
 
 type KnowledgeTab = "files" | "website" | "text" | "qna" | null;
 
@@ -149,10 +149,9 @@ export default function AIAgent() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [leftWidth, setLeftWidth] = useState(42); // percent
   const [isDragging, setIsDragging] = useState(false);
-  const { workspace } = useWorkspace();
   const { toast } = useToast();
-  const [agent, setAgent] = useState<Agent | null>(null);
-  const [loadingAgent, setLoadingAgent] = useState(true);
+  const { currentAgent, setAgentActiveState } = useAgentContext();
+  const agent = currentAgent as Agent | null;
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
@@ -177,34 +176,6 @@ export default function AIAgent() {
       window.removeEventListener("mouseup", onUp);
     };
   }, [isDragging]);
-
-  const loadAgent = useCallback(async () => {
-    if (!workspace?.id) {
-      setAgent(null);
-      setLoadingAgent(false);
-      return;
-    }
-
-    setLoadingAgent(true);
-    try {
-      const result = await getAgentForWorkspace(workspace.id);
-      setAgent(result);
-    } catch (error: any) {
-      console.error("Failed to load agent", error);
-      toast({
-        title: "Unable to load agent",
-        description: error?.message ?? "Please try again.",
-        variant: "destructive",
-      });
-      setAgent(null);
-    } finally {
-      setLoadingAgent(false);
-    }
-  }, [workspace?.id, toast]);
-
-  useEffect(() => {
-    void loadAgent();
-  }, [loadAgent]);
 
   /* =============================
      PAGE STATE
@@ -319,7 +290,7 @@ const [sourcesLoading, setSourcesLoading] = useState(false);
   const [websiteUrl, setWebsiteUrl] = useState("");
   const hasAgent = Boolean(agent);
   const isAgentActive = hasAgent ? agent?.is_active !== false : false;
-  const statusBusy = updatingStatus || loadingAgent;
+  const statusBusy = updatingStatus;
   const interactionsDisabled = !hasAgent || !isAgentActive || statusBusy;
 
   useEffect(() => {
@@ -330,14 +301,22 @@ const [sourcesLoading, setSourcesLoading] = useState(false);
 
   useEffect(() => {
     setRules(agent?.rules ?? "");
-  }, [agent?.rules]);
+    setMessage("");
+    setTextTitle("");
+    setTextBody("");
+    setQQuestion("");
+    setQAnswer("");
+    setWebsiteUrl("");
+    setSourcesState({ status: "empty", sources: [] });
+    setActiveSource(null);
+  }, [agent?.id, agent?.rules]);
 
   const handleDeactivate = useCallback(async () => {
     if (!agent?.id) return;
     setUpdatingStatus(true);
     try {
       await deactivateAgent(agent.id);
-      await loadAgent();
+      setAgentActiveState(agent.id, false);
       toast({
         title: "Agent disabled",
         description: "The agent will no longer respond until re-enabled.",
@@ -351,14 +330,14 @@ const [sourcesLoading, setSourcesLoading] = useState(false);
     } finally {
       setUpdatingStatus(false);
     }
-  }, [agent?.id, loadAgent, toast]);
+  }, [agent?.id, setAgentActiveState, toast]);
 
   const handleReactivate = useCallback(async () => {
     if (!agent?.id) return;
     setUpdatingStatus(true);
     try {
       await reactivateAgent(agent.id);
-      await loadAgent();
+      setAgentActiveState(agent.id, true);
       toast({
         title: "Agent enabled",
         description: "The agent is active again.",
@@ -372,7 +351,7 @@ const [sourcesLoading, setSourcesLoading] = useState(false);
     } finally {
       setUpdatingStatus(false);
     }
-  }, [agent?.id, loadAgent, toast]);
+  }, [agent?.id, setAgentActiveState, toast]);
   /* =============================
      ROLE → RULES TEMPLATES
   ============================== */
@@ -934,4 +913,3 @@ const [sourcesLoading, setSourcesLoading] = useState(false);
     //               </SelectContent>
     //             </Select>
                
-
