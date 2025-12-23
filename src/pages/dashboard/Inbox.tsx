@@ -29,6 +29,7 @@ import {
   MessageCircle,
   MessagesSquare,
   Info,
+  AlertTriangle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -41,8 +42,11 @@ import {
   type MessageRow,
   type ChannelRow,
 } from "@/services/inbox";
+import { getBillingSnapshot } from "@/services/billing";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type StatusFilter = "open" | "closed" | "handoff";
+type BillingState = "normal" | "warning" | "blocked";
 
 const channelIconMap: Record<string, LucideIcon> = {
   whatsapp: MessageCircle,
@@ -73,6 +77,7 @@ export default function Inbox() {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [lastMessagePreview, setLastMessagePreview] = useState<Record<string, string>>({});
   const [unreadByConversation, setUnreadByConversation] = useState<Record<string, boolean>>({});
+  const [billingStatus, setBillingStatus] = useState<BillingState>("normal");
 
   const selectedConversationRow = useMemo(
     () => conversations.find((c) => c.id === selectedConversation) ?? null,
@@ -113,6 +118,18 @@ export default function Inbox() {
   }, [fetchChannels, fetchConversations]);
 
   useEffect(() => {
+    getBillingSnapshot().then((snapshot) => {
+      const percent =
+        snapshot.usage.messagesLimit === 0
+          ? 0
+          : (snapshot.usage.messagesUsed / snapshot.usage.messagesLimit) * 100;
+      if (percent > 100) return setBillingStatus("blocked");
+      if (percent >= 70) return setBillingStatus("warning");
+      return setBillingStatus("normal");
+    });
+  }, []);
+
+  useEffect(() => {
     if (!selectedConversation) return;
     void fetchMessages(selectedConversation);
   }, [selectedConversation, fetchMessages]);
@@ -138,6 +155,7 @@ export default function Inbox() {
   };
 
   async function sendHumanMessage() {
+    if (billingStatus === "blocked") return;
     if (!selectedConversationRow) return;
     if (!newMessage.trim()) return;
 
@@ -189,6 +207,12 @@ export default function Inbox() {
         </Tabs>
 
         <div className="flex items-center gap-3">
+          {billingStatus === "warning" && (
+            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+              {dir === "rtl" ? "قرب الحد" : "Approaching usage limit"}
+            </Badge>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="relative">
@@ -414,16 +438,28 @@ export default function Inbox() {
               </ScrollArea>
 
               <div className="p-4 border-t">
+                {billingStatus === "blocked" && (
+                  <Alert variant="destructive" className="mb-3">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>{dir === "rtl" ? "تم تجاوز الحد" : "Plan limit exceeded"}</AlertTitle>
+                    <AlertDescription>
+                      {dir === "rtl"
+                        ? "تم إيقاف إرسال الرسائل مؤقتاً. الرجاء الترقية لاستمرار الاستخدام."
+                        : "Message sending is temporarily paused. Upgrade to continue."}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div className="flex gap-2">
                   <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder={dir === "rtl" ? "اكتب رد الفريق..." : "Type a team reply..."}
+                    disabled={billingStatus === "blocked"}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void sendHumanMessage();
                     }}
                   />
-                  <Button onClick={sendHumanMessage}>
+                  <Button onClick={sendHumanMessage} disabled={billingStatus === "blocked"}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
