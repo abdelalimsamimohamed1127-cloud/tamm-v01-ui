@@ -1,8 +1,12 @@
+import { useEffect, useMemo, useState } from "react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { getBillingSnapshot, type BillingSnapshot } from "@/services/billing";
 
 export function WorkspaceGeneralSettingsCard() {
   return (
@@ -96,23 +100,138 @@ export function WorkspacePlansSettingsCard() {
   );
 }
 
+type UsageState = "normal" | "warning" | "blocked";
+
 export function WorkspaceBillingSettingsCard() {
+  const [billing, setBilling] = useState<BillingSnapshot | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    getBillingSnapshot()
+      .then(setBilling)
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const usageSections = useMemo(() => {
+    if (!billing) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Messages",
+        used: billing.usage.messagesUsed,
+        limit: billing.usage.messagesLimit,
+      },
+      {
+        label: "Tokens",
+        used: billing.usage.tokensUsed,
+        limit: billing.usage.tokensLimit,
+      },
+    ];
+  }, [billing]);
+
+  const getUsageStatus = (used: number, limit: number): { state: UsageState; percent: number } => {
+    const percent = limit === 0 ? 0 : (used / limit) * 100;
+    if (percent > 100) return { state: "blocked", percent };
+    if (percent >= 70) return { state: "warning", percent };
+    return { state: "normal", percent };
+  };
+
+  const statusStyles: Record<UsageState, { badge: string; progress: string; label: string }> = {
+    normal: {
+      badge: "bg-emerald-50 text-emerald-700 border-emerald-100",
+      progress: "bg-emerald-500",
+      label: "Normal",
+    },
+    warning: {
+      badge: "bg-amber-50 text-amber-700 border-amber-100",
+      progress: "bg-amber-500",
+      label: "Warning",
+    },
+    blocked: {
+      badge: "bg-destructive/10 text-destructive border-destructive/20",
+      progress: "bg-destructive",
+      label: "Blocked",
+    },
+  };
+
   return (
     <Card className="h-full">
-      <CardHeader>
-        <CardTitle>Billing</CardTitle>
-        <CardDescription>Payment method and invoices.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="rounded-lg border p-3 space-y-1">
-          <p className="text-sm font-semibold">Visa ending 4242</p>
-          <p className="text-xs text-muted-foreground">Next charge: $120 on Feb 28</p>
+      <CardHeader className="gap-4 sm:flex sm:items-center sm:justify-between">
+        <div>
+          <CardTitle>Billing</CardTitle>
+          <CardDescription>Plan summary and usage (read-only).</CardDescription>
         </div>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" disabled>
-            Update payment
-          </Button>
-          <Button disabled>Download invoices</Button>
+        <Button disabled={isLoading}>Upgrade Plan</Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-lg border p-4 sm:flex sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">Current plan</p>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <p className="text-base font-semibold">
+                {billing?.planName ?? "Loading plan..."}
+              </p>
+              {billing && (
+                <Badge variant="secondary" className="w-fit">
+                  Billed {billing.billingCycle}
+                </Badge>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 sm:mt-0 text-right">
+            <p className="text-sm text-muted-foreground">Price per month</p>
+            <p className="text-2xl font-semibold">
+              {billing ? `$${billing.pricePerMonth.toLocaleString()}` : "—"}
+              <span className="text-sm font-normal text-muted-foreground"> / month</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Usage overview</p>
+            <p className="text-xs text-muted-foreground">Auto refresh soon</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {usageSections.map((section) => {
+              const { state, percent } = getUsageStatus(section.used, section.limit);
+              const styles = statusStyles[state];
+
+              return (
+                <div key={section.label} className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">{section.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {section.used.toLocaleString()} / {section.limit.toLocaleString()}
+                      </p>
+                    </div>
+                    <Badge className={styles.badge} variant="outline">
+                      {styles.label}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{Math.floor(percent)}% used</span>
+                      <span>{percent > 100 ? "Over limit" : "Within limit"}</span>
+                    </div>
+                    <Progress
+                      value={Math.min(percent, 120)}
+                      indicatorClassName={styles.progress}
+                      className="h-2"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            {isLoading && (
+              <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                Loading billing usage...
+              </div>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
