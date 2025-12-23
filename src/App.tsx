@@ -14,6 +14,9 @@ import Automations from "@/pages/dashboard/Automations";
 import Evals from "@/pages/dashboard/Evals";
 import Insights from "@/pages/dashboard/Insights";
 import Analytics from "@/pages/dashboard/Analytics";
+import Account from "@/pages/dashboard/Account";
+import ManageAgents from "@/pages/dashboard/ManageAgents";
+import WorkspaceSettings from "@/pages/dashboard/WorkspaceSettings";
 import NotFound from "@/pages/NotFound";
 import Admin from "@/pages/admin/Admin";
 import { isSupabaseConfigured } from "@/integrations/supabase/client";
@@ -28,6 +31,8 @@ import AdminDocs from "@/pages/admin/Docs";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Landing from "@/pages/Landing";
+
+
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -49,7 +54,9 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/account" element={<Account />} />
+      {/* Keep legacy /account entry, but render the same in-dashboard page */}
+      <Route path="/account" element={<Navigate to="/dashboard/account" replace />} />
+      
 
       <Route path="/dashboard/*" element={<Dashboard />}>
         <Route index element={<Navigate to="overview" replace />} />
@@ -63,6 +70,11 @@ export default function App() {
         <Route path="evals" element={<Evals />} />
         <Route path="insights" element={<Insights />} />
         <Route path="analytics" element={<Analytics />} />
+
+        {/* Profile menu destinations */}
+        <Route path="account" element={<Account />} />
+        <Route path="manage-agents" element={<ManageAgents />} />
+        <Route path="workspace-settings" element={<WorkspaceSettings />} />
         <Route path="settings/*" element={<Settings />}>
           <Route index element={<SettingsIndexRedirect />} />
           <Route path="general" element={<SettingsGeneral />} />

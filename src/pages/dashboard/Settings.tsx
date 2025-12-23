@@ -4,14 +4,7 @@ export default function Settings() {
   return <Outlet />;
 }
 
-export function SettingsIndexRedirect() {
-  return <Navigate to="general" replace />;
-}
-
-export function SettingsIndexRedirect() {
-  return <Navigate to="general" replace />;
-}
-
+// ✅ تعريف واحد فقط
 export function SettingsIndexRedirect() {
   return <Navigate to="general" replace />;
 }

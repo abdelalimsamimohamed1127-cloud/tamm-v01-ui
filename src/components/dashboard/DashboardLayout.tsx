@@ -9,6 +9,18 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Users } from "lucide-react";
 import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
+import { Input } from "@/components/ui/input";
+
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -169,6 +181,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       })}
     </nav>
   );
+    const handleCreateWorkspace = () => {
+  // TODO: later wire to real create-workspace flow
+  console.log("Create workspace clicked");
+};
 
   return (
     <div className="min-h-screen bg-slate-50 flex" dir={dir}>
@@ -305,16 +321,22 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/dashboard/settings/general" className="flex items-center">
+                  <Link to="/dashboard/account" className="flex items-center">
                     <User className="h-4 w-4 mr-2" />
                     Account settings
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/dashboard/workspace" className="flex items-center">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    // keep menu behavior consistent while opening the dialog
+                    e.preventDefault();
+                    setWorkspaceDialogOpen(true);
+                  }}
+                >
+                  <div className="flex items-center">
                     <BadgePlus className="h-4 w-4 mr-2" />
                     Create or join workspace
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
@@ -383,26 +405,3 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 }
-  const handleManageAgents = () => {
-    navigate('/dashboard/manage-agents');
-  };
-
-  const handleAccountSettings = () => {
-    navigate('/account');
-  };
-
-  const handleWorkspaceDialog = () => {
-    setWorkspaceCreated(false);
-    setWorkspaceDialogOpen(true);
-  };
-
-  const handleCreateWorkspace = () => {
-    if (!workspaceName.trim() || !workspaceUrl.trim()) return;
-    setWorkspaceCreated(true);
-    setTimeout(() => {
-      navigate('/dashboard');
-      setWorkspaceDialogOpen(false);
-      setWorkspaceName('');
-      setWorkspaceUrl('');
-    }, 600);
-  };
