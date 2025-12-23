@@ -17,8 +17,22 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { Input } from "@/components/ui/input";
+import {
+  WorkspaceBillingSettingsCard,
+  WorkspaceGeneralSettingsCard,
+  WorkspaceMembersSettingsCard,
+  WorkspacePlansSettingsCard,
+} from "@/components/workspace/WorkspaceSettingsSections";
 
 import {
   DropdownMenu,
@@ -80,9 +94,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [workspaceSettingsTab, setWorkspaceSettingsTab] = useState('general');
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const agentCredits = {
+    used: 2,
+    limit: 50,
+    resetDate: 'Renews on May 1',
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -227,8 +248,29 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
         <NavContent />
 
-        {/* Agent Status */}
-        <div className="px-3 pb-4">
+        {/* Credits & Agent Status */}
+        <div className="px-3 pb-4 space-y-3">
+          <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Credits</p>
+              <span className="text-xs font-semibold">
+                {agentCredits.used} / {agentCredits.limit}
+              </span>
+            </div>
+            {!collapsed && (
+              <div className="space-y-2 mt-2">
+                <div className="text-xl font-semibold">
+                  {agentCredits.used}
+                  <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
+                <Button variant="outline" size="sm" className="w-full">
+                  Upgrade
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className={cn(
             'flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg',
             collapsed && 'justify-center'
@@ -338,6 +380,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     Create or join workspace
                   </div>
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setWorkspaceSettingsOpen(true);
+                  }}
+                >
+                  <div className="flex items-center">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Workspace settings
+                  </div>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                   <LogOut className="h-4 w-4 mr-2" />
@@ -392,6 +445,68 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     {workspaceCreated ? 'Continue to dashboard' : 'Create'}
                   </Button>
                 </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={workspaceSettingsOpen} onOpenChange={setWorkspaceSettingsOpen}>
+              <DialogTrigger asChild>
+                <span />
+              </DialogTrigger>
+              <DialogContent
+                className="sm:max-w-5xl w-screen h-screen sm:h-auto sm:w-auto max-h-screen sm:max-h-[85vh] p-0 sm:p-6 overflow-hidden rounded-none sm:rounded-lg left-0 top-0 translate-x-0 translate-y-0 sm:left-1/2 sm:top-1/2 sm:translate-x-[-50%] sm:translate-y-[-50%]"
+                onInteractOutside={(event) => {
+                  if (event.defaultPrevented) return;
+                }}
+              >
+                <div className="flex h-full flex-col overflow-hidden">
+                  <DialogHeader className="px-6 pt-6 sm:px-0 sm:pt-0">
+                    <DialogTitle>Workspace settings</DialogTitle>
+                    <DialogDescription>
+                      Manage workspace details without leaving your current page.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="flex-1 overflow-y-auto px-6 pb-6 sm:px-0 sm:pb-0">
+                    <Tabs
+                      value={workspaceSettingsTab}
+                      onValueChange={setWorkspaceSettingsTab}
+                      className="space-y-4 h-full"
+                    >
+                      <div className="sm:hidden">
+                        <Select value={workspaceSettingsTab} onValueChange={setWorkspaceSettingsTab}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="general">General</SelectItem>
+                            <SelectItem value="members">Members</SelectItem>
+                            <SelectItem value="plans">Plans</SelectItem>
+                            <SelectItem value="billing">Billing</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <TabsList className="hidden sm:grid w-full grid-cols-4">
+                        <TabsTrigger value="general">General</TabsTrigger>
+                        <TabsTrigger value="members">Members</TabsTrigger>
+                        <TabsTrigger value="plans">Plans</TabsTrigger>
+                        <TabsTrigger value="billing">Billing</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="general" className="space-y-4">
+                        <WorkspaceGeneralSettingsCard />
+                      </TabsContent>
+                      <TabsContent value="members" className="space-y-4">
+                        <WorkspaceMembersSettingsCard />
+                      </TabsContent>
+                      <TabsContent value="plans" className="space-y-4">
+                        <WorkspacePlansSettingsCard />
+                      </TabsContent>
+                      <TabsContent value="billing" className="space-y-4">
+                        <WorkspaceBillingSettingsCard />
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                </div>
               </DialogContent>
             </Dialog>
           </div>
