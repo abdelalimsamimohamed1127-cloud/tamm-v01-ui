@@ -15,22 +15,22 @@ export function WorkspaceGeneralSettingsCard() {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Workspace name</p>
-            <Input value="My Workspace" readOnly className="w-full" />
+            <Input value="My Workspace" readOnly />
           </div>
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Workspace ID</p>
-            <Input value="ws_123456" readOnly className="bg-muted/70 w-full" />
+            <Input value="ws_123456" readOnly className="bg-muted/70" />
           </div>
         </div>
         <Separator />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-destructive">Delete workspace</p>
             <p className="text-xs text-muted-foreground">
               Remove workspace data permanently. Disabled in UI preview.
             </p>
           </div>
-          <Button variant="destructive" disabled className="w-full sm:w-auto min-h-[44px]">
+          <Button variant="destructive" disabled>
             Delete workspace
           </Button>
         </div>
@@ -57,11 +57,11 @@ export function WorkspaceMembersSettingsCard() {
             <span className="text-sm font-medium">agent@workspace.com</span>
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" disabled className="w-full sm:w-auto min-h-[44px]">
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" disabled>
             Remove member
           </Button>
-          <Button disabled className="w-full sm:w-auto min-h-[44px]">Invite member</Button>
+          <Button disabled>Invite member</Button>
         </div>
       </CardContent>
     </Card>
@@ -77,7 +77,7 @@ export function WorkspacePlansSettingsCard() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold">Pro</p>
               <p className="text-xs text-muted-foreground">Up to 5 agents, priority support</p>
@@ -85,11 +85,11 @@ export function WorkspacePlansSettingsCard() {
             <Badge>Active</Badge>
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" disabled className="w-full sm:w-auto min-h-[44px]">
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" disabled>
             Downgrade
           </Button>
-          <Button disabled className="w-full sm:w-auto min-h-[44px]">Upgrade</Button>
+          <Button disabled>Upgrade</Button>
         </div>
       </CardContent>
     </Card>
@@ -108,11 +108,11 @@ export function WorkspaceBillingSettingsCard() {
           <p className="text-sm font-semibold">Visa ending 4242</p>
           <p className="text-xs text-muted-foreground">Next charge: $120 on Feb 28</p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" disabled className="w-full sm:w-auto min-h-[44px]">
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" disabled>
             Update payment
           </Button>
-          <Button disabled className="w-full sm:w-auto min-h-[44px]">Download invoices</Button>
+          <Button disabled>Download invoices</Button>
         </div>
       </CardContent>
     </Card>
