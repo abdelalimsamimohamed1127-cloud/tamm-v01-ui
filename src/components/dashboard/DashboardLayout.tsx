@@ -194,47 +194,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       })}
     </nav>
   );
-    const handleCreateWorkspace = () => {
-  // TODO: later wire to real create-workspace flow
-  console.log("Create workspace clicked");
-};
+  const handleCreateWorkspace = () => {
+    // TODO: later wire to real create-workspace flow
+    console.log("Create workspace clicked");
+  };
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex" dir={dir}>
-      {/* Desktop Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: collapsed ? 72 : 256 }}
-        className={cn(
-          'hidden lg:flex flex-col bg-slate-100 border-r border-sidebar-border',
-          dir === 'rtl' ? 'border-l border-r-0' : ''
-        )}
-      >
-        {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-2"
-              >
-                <span className="text-xl font-bold gradient-text">Tamm</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+  const AgentSwitcher = () => {
+    const { currentAgent, agents, setCurrentAgentId } = useAgentContext();
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCollapsed(!collapsed)}
-            className="h-8 w-8"
+            variant="outline"
+            className="hidden md:flex items-center gap-2 h-9 px-3"
           >
-            {(collapsed ? (dir === 'rtl' ? ChevronLeft : ChevronRight) : (dir === 'rtl' ? ChevronRight : ChevronLeft)) && (
-              collapsed ? 
-                (dir === 'rtl' ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : 
-                (dir === 'rtl' ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />)
-            )}
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium truncate max-w-[140px]">{currentAgent?.name ?? "Select agent"}</span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </Button>
         </div>
 
@@ -297,55 +273,144 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
               )}
             >
-              <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-                <span className="text-xl font-bold gradient-text">Tamm</span>
+              <Bot className="h-4 w-4" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{agent.name}</p>
+                <p className="text-[11px] text-muted-foreground">ID: {agent.id}</p>
               </div>
-              <NavContent />
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar */}
-        <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-6">
-          <div className="flex items-center gap-3">
+  return (
+    <AgentProvider>
+      <div className="min-h-screen bg-slate-50 flex" dir={dir}>
+        {/* Desktop Sidebar */}
+        <motion.aside
+          initial={false}
+          animate={{ width: collapsed ? 72 : 256 }}
+          className={cn(
+            'hidden lg:flex flex-col bg-slate-100 border-r border-sidebar-border',
+            dir === 'rtl' ? 'border-l border-r-0' : ''
+          )}
+        >
+          {/* Logo */}
+          <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-xl font-bold gradient-text">Tamm</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setMobileOpen(true)}
-              className="lg:hidden"
+              onClick={() => setCollapsed(!collapsed)}
+              className="h-8 w-8"
             >
-              <Menu className="h-5 w-5" />
+              {(collapsed ? (dir === 'rtl' ? ChevronLeft : ChevronRight) : (dir === 'rtl' ? ChevronRight : ChevronLeft)) && (
+                collapsed ? 
+                  (dir === 'rtl' ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : 
+                  (dir === 'rtl' ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />)
+              )}
             </Button>
-            <div className="hidden sm:block">
-              <h2 className="text-sm font-medium">{workspace?.name || 'My Workspace'}</h2>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Sparkles className="h-3 w-3 text-accent" />
-                <span className="capitalize">{workspace?.plan || 'Free'} Plan</span>
-              </div>
-            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <LanguageToggle />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback className="bg-primary text-primary-foreground">
-                      {user?.email?.charAt(0).toUpperCase() || 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align={dir === 'rtl' ? 'start' : 'end'} className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.email}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {workspace?.plan || 'Free'} Plan
-                  </p>
+          <NavContent />
+
+          {/* Credits & Agent Status */}
+          <div className="px-3 pb-4 space-y-3">
+            <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Credits</p>
+                <span className="text-xs font-semibold">
+                  {agentCredits.used} / {agentCredits.limit}
+                </span>
+              </div>
+              {!collapsed && (
+                <div className="space-y-2 mt-2">
+                  <div className="text-xl font-semibold">
+                    {agentCredits.used}
+                    <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
+                  <Button variant="outline" size="sm" className="w-full min-h-[44px]">
+                    Upgrade
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className={cn(
+              'flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg',
+              collapsed && 'justify-center'
+            )}>
+              <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+              {!collapsed && (
+                <span className="text-xs font-medium text-accent">
+                  {t('stats.active')}
+                </span>
+              )}
+            </div>
+          </div>
+        </motion.aside>
+
+        {/* Mobile Sidebar Overlay */}
+        <AnimatePresence>
+          {mobileOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileOpen(false)}
+                className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-40 lg:hidden"
+              />
+              <motion.aside
+                initial={{ x: dir === 'rtl' ? 256 : -256 }}
+                animate={{ x: 0 }}
+                exit={{ x: dir === 'rtl' ? 256 : -256 }}
+                className={cn(
+                  'fixed top-0 bottom-0 w-full max-w-xs bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col shadow-lg',
+                  dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
+                )}
+              >
+                <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
+                  <span className="text-xl font-bold gradient-text">Tamm</span>
+                </div>
+                <NavContent />
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Top Bar */}
+          <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-6">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileOpen(true)}
+                className="lg:hidden"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              <div className="hidden sm:block">
+                <h2 className="text-sm font-medium">{workspace?.name || 'My Workspace'}</h2>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Sparkles className="h-3 w-3 text-accent" />
+                  <span className="capitalize">{workspace?.plan || 'Free'} Plan</span>
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
@@ -425,14 +490,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <div className="space-y-2 rounded-lg border p-3 bg-muted/40">
                     <p className="text-sm font-medium">Workspace created</p>
                     <p className="text-xs text-muted-foreground">
-                      You can invite teammates with an invitation code or start configuring channels.
+                      {workspace?.plan || 'Free'} Plan
                     </p>
                   </div>
-                )}
-                <DialogFooter>
-                  <Button
-                    disabled={!workspaceName.trim() || !workspaceUrl.trim()}
-                    onClick={handleCreateWorkspace}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/dashboard/manage-agents" className="flex items-center">
+                      <Users className="h-4 w-4 mr-2" />
+                      Manage agents
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/dashboard/account" className="flex items-center">
+                      <User className="h-4 w-4 mr-2" />
+                      Account settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      // keep menu behavior consistent while opening the dialog
+                      e.preventDefault();
+                      setWorkspaceDialogOpen(true);
+                    }}
                   >
                     {workspaceCreated ? 'Continue to dashboard' : 'Create'}
                   </Button>
@@ -480,6 +559,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </main>
       </div>
-    </div>
+    </AgentProvider>
   );
 }
