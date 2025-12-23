@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,21 +6,12 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
-import { Activity, MessageSquare, Database } from "lucide-react";
 
 interface AgentRow {
   id: string;
   name: string;
   email: string;
 }
-
-type UsageStats = {
-  totalMessages: number;
-  messageLimit: number;
-  aiTokens: number;
-  activeAgents: number;
-};
 
 const seedAgents: AgentRow[] = [
   { id: "agt_001", name: "Default Agent", email: "agent@workspace.com" },
@@ -32,12 +22,6 @@ export default function ManageAgentsDialogContent() {
   const [agents, setAgents] = useState<AgentRow[]>(seedAgents);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [usage, setUsage] = useState<UsageStats>({
-    totalMessages: 0,
-    messageLimit: 0,
-    aiTokens: 0,
-    activeAgents: seedAgents.length,
-  });
 
   const canCreate = useMemo(() => name.trim() && email.trim(), [name, email]);
 
@@ -58,20 +42,6 @@ export default function ManageAgentsDialogContent() {
   const deleteAgent = (id: string) => {
     setAgents((prev) => prev.filter((agent) => agent.id !== id));
   };
-
-  const fetchUsageStats = async (): Promise<UsageStats> => {
-    // Mocked data for now; wire to real usage metrics later.
-    return {
-      totalMessages: 1250,
-      messageLimit: 2000,
-      aiTokens: 450_000,
-      activeAgents: agents.length,
-    };
-  };
-
-  useEffect(() => {
-    void fetchUsageStats().then(setUsage);
-  }, [agents.length]);
 
   return (
     <div className="w-full max-w-3xl">
@@ -145,51 +115,37 @@ export default function ManageAgentsDialogContent() {
             </TabsContent>
 
             <TabsContent value="usage" className="pt-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="h-full">
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Usage overview</CardTitle>
+                  <CardDescription>Mock usage metrics for this workspace.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
-                      <CardTitle className="text-sm">Total Messages</CardTitle>
-                      <CardDescription>{`${usage.totalMessages} / ${usage.messageLimit}`}</CardDescription>
+                      <p className="text-sm font-medium">Messages used</p>
+                      <p className="text-xs text-muted-foreground">1,240 / 5,000</p>
                     </div>
-                    <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <Progress value={(usage.totalMessages / Math.max(usage.messageLimit, 1)) * 100} />
-                    <p className="text-xs text-muted-foreground">
-                      {Math.round((usage.totalMessages / Math.max(usage.messageLimit, 1)) * 100)}% of quota
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="h-full">
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                    <Badge variant="secondary">24.8%</Badge>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
-                      <CardTitle className="text-sm">AI Tokens</CardTitle>
-                      <CardDescription>Approx. cost estimate</CardDescription>
+                      <p className="text-sm font-medium">Storage</p>
+                      <p className="text-xs text-muted-foreground">45% of plan quota</p>
                     </div>
-                    <Database className="h-5 w-5 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-lg font-semibold">{usage.aiTokens.toLocaleString()} tokens</p>
-                    <p className="text-xs text-muted-foreground">Mock data (read-only)</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="h-full">
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                    <Badge variant="outline" className="text-emerald-700">
+                      Healthy
+                    </Badge>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
-                      <CardTitle className="text-sm">Active Agents</CardTitle>
-                      <CardDescription>Current seats in use</CardDescription>
+                      <p className="text-sm font-medium">Active agents</p>
+                      <p className="text-xs text-muted-foreground">2 / 10 seats</p>
                     </div>
-                    <Activity className="h-5 w-5 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-lg font-semibold">{usage.activeAgents}</p>
-                    <p className="text-xs text-muted-foreground">Read-only preview</p>
-                  </CardContent>
-                </Card>
-              </div>
+                    <Badge variant="secondary">Seats available</Badge>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </div>
