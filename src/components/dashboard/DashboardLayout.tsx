@@ -91,6 +91,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [workspaceCreated, setWorkspaceCreated] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const agentCredits = {
+    used: 2,
+    limit: 50,
+    resetDate: 'Renews on May 1',
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -235,8 +240,29 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
         <NavContent />
 
-        {/* Agent Status */}
-        <div className="px-3 pb-4">
+        {/* Credits & Agent Status */}
+        <div className="px-3 pb-4 space-y-3">
+          <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Credits</p>
+              <span className="text-xs font-semibold">
+                {agentCredits.used} / {agentCredits.limit}
+              </span>
+            </div>
+            {!collapsed && (
+              <div className="space-y-2 mt-2">
+                <div className="text-xl font-semibold">
+                  {agentCredits.used}
+                  <span className="text-sm text-muted-foreground"> / {agentCredits.limit}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
+                <Button variant="outline" size="sm" className="w-full">
+                  Upgrade
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className={cn(
             'flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg',
             collapsed && 'justify-center'
