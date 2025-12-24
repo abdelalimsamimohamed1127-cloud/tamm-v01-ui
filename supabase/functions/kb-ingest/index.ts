@@ -180,6 +180,20 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const { data: walletBalance, error: walletError } = await supabase.rpc(
+      'get_wallet_balance',
+      { workspace_id: source.workspace_id },
+    );
+
+    if (walletError) throw walletError;
+
+    if ((walletBalance as any)?.balance < 20) {
+      return jsonResponse(
+        { error: 'Insufficient credits for knowledge ingestion' },
+        { status: 402 },
+      );
+    }
+
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAiKey) {
       return jsonResponse(
@@ -301,6 +315,17 @@ Deno.serve(async (req) => {
       targetId: sourceId,
       metadata: { chunks: chunks.length },
     });
+
+    try {
+      await supabase.rpc('deduct_credits', {
+        ws_id: source.workspace_id,
+        amount: 20,
+        reason: 'kb_ingest_fee',
+        meta: { file_type: 'pdf' },
+      });
+    } catch (deductError) {
+      console.error('Credit deduction failed', deductError);
+    }
 
     return jsonResponse({
       ok: true,

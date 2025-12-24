@@ -14,6 +14,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { CtfUsagePanel } from "@/components/analytics/CtfUsagePanel";
 
 const RANGE_OPTIONS = [
   { label: "Last 7 days", value: 7 },
@@ -202,7 +203,7 @@ export default function Analytics() {
   }, [rangeStartDate, selectedRange]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">General Analytics</h1>
@@ -280,6 +281,8 @@ export default function Analytics() {
           )}
         </CardContent>
       </Card>
+
+      <CtfUsagePanel />
     </div>
   );
 }

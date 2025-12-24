@@ -27,6 +27,7 @@ import AdminUsage from "@/pages/admin/Usage";
 import AdminBilling from "@/pages/admin/Billing";
 import AdminAuditLogs from "@/pages/admin/AuditLogs";
 import AdminDocs from "@/pages/admin/Docs";
+import AdminPlans from "@/pages/admin/Plans";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Landing from "@/pages/Landing";
@@ -94,6 +95,7 @@ export default function App() {
         <Route path="workspaces" element={<AdminWorkspaces />} />
         <Route path="agents" element={<AdminAgents />} />
         <Route path="usage" element={<AdminUsage />} />
+        <Route path="plans" element={<AdminPlans />} />
         <Route path="billing" element={<AdminBilling />} />
         <Route path="audit" element={<AdminAuditLogs />} />
         <Route path="docs" element={<AdminDocs />} />
