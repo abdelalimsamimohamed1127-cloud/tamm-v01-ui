@@ -1,97 +1,105 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-type InsightReport = {
-  id: string;
-  created_at: string;
-  period_yyyymm: string | null;
-  title: string | null;
-  report: any;
-};
+import InsightsExplorer, { type ChatSessionSummary } from "@/components/analytics/InsightsExplorer";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+
+function normalizeTopic(topic: string | null | undefined) {
+  return topic?.trim() ? topic.trim() : "Unclassified";
+}
+
+function normalizeSentiment(sentiment: string | null | undefined) {
+  if (sentiment === "positive" || sentiment === "negative" || sentiment === "neutral") {
+    return sentiment;
+  }
+  return "neutral";
+}
 
 export default function Insights() {
-  const { t, dir } = useLanguage();
-  const { workspace } = useWorkspace();
-  const [loading, setLoading] = useState(true);
-  const [reports, setReports] = useState<InsightReport[]>([]);
+  const [visibleSessions, setVisibleSessions] = useState<ChatSessionSummary[]>([]);
+  const navigate = useNavigate();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('insight_reports')
-      .select('id,created_at,period_yyyymm,title,report')
-      .eq('workspace_id', workspace.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
+  const sortedSessions = useMemo(
+    () => [...visibleSessions].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")),
+    [visibleSessions],
+  );
 
-    setReports((data as any) ?? []);
-    setLoading(false);
-  }, [workspace.id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function generateNow() {
-    setLoading(true);
-    await supabase.functions.invoke('generate_weekly_insights', {
-      body: { workspace_id: workspace.id },
-    });
-    await load();
-  }
+  const handleRowClick = useCallback(
+    (session: ChatSessionSummary) => {
+      const sessionId = session.session_id ?? session.id;
+      if (!sessionId) return;
+      navigate("/dashboard/inbox", { state: { sessionId } });
+    },
+    [navigate],
+  );
 
   return (
-    <div className="space-y-6" dir={dir}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">{t('dashboard.insights')}</h1>
-          <p className="text-muted-foreground">
-            {dir === 'rtl' ? 'تقارير ذكية تساعدك تحسن المبيعات والدعم' : 'Weekly insights to improve sales and support'}
-          </p>
-        </div>
-        <Button onClick={() => void generateNow()} disabled={loading}>
-          {dir === 'rtl' ? 'توليد تقرير الآن' : 'Generate now'}
-        </Button>
+    <div className="space-y-6 p-4">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold">Insights Explorer</h1>
+        <p className="text-muted-foreground">Visualize conversation topics, sentiment, and urgency trends.</p>
       </div>
 
-      {loading ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{dir === 'rtl' ? 'جار التحميل...' : 'Loading...'}</CardTitle>
-          </CardHeader>
-        </Card>
-      ) : reports.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{dir === 'rtl' ? 'لا توجد تقارير بعد' : 'No reports yet'}</CardTitle>
-            <CardDescription>
-              {dir === 'rtl'
-                ? 'اضغط "توليد تقرير الآن" أو استخدم المنصة لعدة أيام.'
-                : 'Click "Generate now" or use the platform for a few days.'}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {reports.map((r) => (
-            <Card key={r.id}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">{r.title ?? (dir === 'rtl' ? 'تقرير' : 'Report')}</CardTitle>
-                <CardDescription>{new Date(r.created_at).toLocaleString()}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <pre className="text-xs whitespace-pre-wrap bg-muted/30 p-3 rounded-md overflow-auto">
-{JSON.stringify(r.report ?? {}, null, 2)}
-                </pre>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <InsightsExplorer onSessionsChange={setVisibleSessions} />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Drill Down</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Topic</TableHead>
+                <TableHead>Sentiment</TableHead>
+                <TableHead>Customer ID</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedSessions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                    No data in selected range
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sortedSessions.map((session) => {
+                  const topic = normalizeTopic(session.topic);
+                  const sentiment = normalizeSentiment(session.sentiment);
+                  const customerId =
+                    session.external_user_id || session.user_id || session.session_id || session.id || "Unknown";
+
+                  return (
+                    <TableRow
+                      key={session.id}
+                      className="cursor-pointer"
+                      onClick={() => handleRowClick(session)}
+                    >
+                      <TableCell className="capitalize">{topic}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={sentiment === "negative" ? "destructive" : sentiment === "positive" ? "default" : "secondary"}
+                          className={cn("capitalize", sentiment === "neutral" && "text-muted-foreground")}
+                        >
+                          {sentiment}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{customerId}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {session.created_at ? new Date(session.created_at).toLocaleString() : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
