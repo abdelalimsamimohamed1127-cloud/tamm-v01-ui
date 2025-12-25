@@ -119,8 +119,8 @@ export default function Login() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <Link to="/" className="text-4xl font-bold mb-6 block">
-              Tamm
+            <Link to="/">
+              <img src="/tamm-logo.svg" alt="Tamm Logo" className="h-10 mb-6" />
             </Link>
             <h1 className="text-3xl font-bold mb-4">
               {dir === 'rtl' ? 'وكيل مبيعاتك الذكي' : 'Your AI Sales Agent'}
@@ -150,8 +150,8 @@ export default function Login() {
       {/* Right Panel - Auth Form */}
       <div className="flex-1 flex flex-col">
         <div className="flex justify-between items-center p-4">
-          <Link to="/" className="text-2xl font-bold gradient-text lg:hidden">
-            Tamm
+          <Link to="/" className="lg:hidden">
+            <img src="/tamm-logo.svg" alt="Tamm Logo" className="h-8" />
           </Link>
           <LanguageToggle />
         </div>

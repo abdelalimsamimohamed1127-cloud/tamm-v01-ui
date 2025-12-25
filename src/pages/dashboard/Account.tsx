@@ -1,112 +1,80 @@
-import { useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
-import { useToast } from "@/hooks/use-toast";
 
-/**
- * UI-only Account page (Chatbase-style)
- * - No backend changes in this task
- * - Safe: does not touch layout/routes besides rendering inside Dashboard
- */
 export default function Account() {
   const { user } = useAuth();
-  const { toast } = useToast();
-
-  const initialEmail = useMemo(() => user?.email ?? "", [user?.email]);
-
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState(initialEmail);
-  const [saving, setSaving] = useState(false);
-
-  const onSave = async () => {
-    setSaving(true);
-    try {
-      // Placeholder (wire later)
-      toast({
-        title: "Saved",
-        description: "Account settings saved (UI-only for now).",
-      });
-    } catch (e: any) {
-      toast({
-        title: "Failed to save",
-        description: e?.message ?? "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const [name, setName] = useState(user?.user_metadata.full_name || "Alex Johnson");
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Account</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your account details.
-        </p>
+    <div className="space-y-8 max-w-4xl mx-auto">
+      <div>
+        <h1 className="text-3xl font-bold">Account Settings</h1>
+        <p className="text-muted-foreground">Manage your account and preferences.</p>
       </div>
 
-      <Card className="p-6">
-        <div className="grid gap-6">
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Display name</label>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your name"
-            />
-            <p className="text-xs text-muted-foreground">
-              This is shown in your workspace.
-            </p>
+      <Card>
+        <CardHeader>
+          <CardTitle>Profile</CardTitle>
+          <CardDescription>This is how others will see you on the site.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            <Avatar className="h-20 w-20">
+              <AvatarFallback className="text-3xl">{name.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <div className="flex-grow space-y-2">
+                <p className="text-sm font-medium">Display Name</p>
+                <Input value={name} onChange={(e) => setName(e.target.value)} className="max-w-sm" />
+            </div>
           </div>
-
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Email</label>
-            <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
-              type="email"
-              autoComplete="email"
-            />
-            <p className="text-xs text-muted-foreground">
-              Email used for login.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={() => {
-              setDisplayName("");
-              setEmail(initialEmail);
-            }} disabled={saving}>
-              Reset
-            </Button>
-            <Button onClick={onSave} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </div>
-        </div>
+        </CardContent>
+        <CardFooter className="border-t px-6 py-4">
+            <Button>Save</Button>
+        </CardFooter>
       </Card>
 
-      <Card className="p-6">
-        <div className="space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold">Danger zone</h2>
-            <p className="text-sm text-muted-foreground">
-              Sensitive actions will be added later.
-            </p>
+      <Card>
+        <CardHeader>
+          <CardTitle>Email</CardTitle>
+          <CardDescription>Your email address is used for login and notifications.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Input type="email" value={user?.email || ''} readOnly disabled className="max-w-sm" />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Two-Factor Authentication</CardTitle>
+          <CardDescription>Add an additional layer of security to your account.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            <div className="max-w-sm">
+                <p className="text-sm font-medium mb-2">Authenticator App</p>
+                <Button variant="outline" disabled>Set up</Button>
+                <p className="text-xs text-muted-foreground mt-2">Use an app like Google Authenticator or Authy.</p>
+            </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive">
+        <CardHeader>
+          <CardTitle className="text-destructive">Danger Zone</CardTitle>
+          <CardDescription>These actions are permanent and cannot be undone.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-between items-center max-w-sm">
+            <div>
+                <p className="text-sm font-medium">Delete your account</p>
+                <p className="text-xs text-muted-foreground">All your data will be permanently removed.</p>
+            </div>
+            <Button variant="destructive" disabled>Delete Account</Button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled>
-              Delete account
-            </Button>
-            <Button variant="destructive" disabled>
-              Logout everywhere
-            </Button>
-          </div>
-        </div>
+        </CardContent>
       </Card>
     </div>
   );

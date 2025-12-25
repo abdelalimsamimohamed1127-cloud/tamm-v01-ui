@@ -8,39 +8,18 @@ import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Users } from "lucide-react";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-import { Input } from "@/components/ui/input";
-import {
-  WorkspaceBillingSettingsCard,
-  WorkspaceGeneralSettingsCard,
-  WorkspaceMembersSettingsCard,
-  WorkspacePlansSettingsCard,
-} from "@/components/workspace/WorkspaceSettingsSections";
-
+import { AgentProvider } from '@/contexts/AgentContext'
 import {
   DropdownMenu,
+  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu"
 import {
-  Radio,
   Bot,
   Inbox,
-  ShoppingCart,
-  LifeBuoy,
-  Workflow,
   BarChart,
   Settings,
   ChevronLeft,
@@ -51,15 +30,20 @@ import {
   Menu,
   ChevronDown,
   BadgePlus,
-  Activity,
   CheckCircle2,
   Lightbulb,
+  FileText,
+  Users2,
+  Send,
+  Cog,
+  Workflow
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import AccountDialogContent from '@/components/settings-dialogs/AccountDialogContent';
-import WorkspaceDialogContent from '@/components/settings-dialogs/WorkspaceDialogContent';
-import ManageAgentsDialogContent from '@/components/settings-dialogs/ManageAgentsDialogContent';
+import AccountDialog from "@/components/settings-dialogs/AccountDialog";
+import CreateWorkspaceDialog from "@/components/settings-dialogs/CreateWorkspaceDialog";
+import ManageAgentsDialog from "@/components/settings-dialogs/ManageAgentsDialog";
+
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -75,35 +59,56 @@ type NavChildItem = {
 
 type NavItem = {
   key: string;
+  title: string; 
   icon: LucideIcon;
   path?: string;
   children?: NavChildItem[];
 };
 
 const navItems: NavItem[] = [
-  { key: 'channels', icon: Radio, path: '/dashboard/channels' },
-  { key: 'agent', icon: Bot, path: '/dashboard/ai-agent' },
-  { key: 'inbox', icon: Inbox, path: '/dashboard/inbox' },
-  { key: 'automations', icon: Workflow, path: '/dashboard/automations' },
-  {
-    key: 'analytics',
-    icon: BarChart,
-    path: '/dashboard/analytics/general',
-    children: [
-      { key: 'analytics.general', path: '/dashboard/analytics/general', icon: Activity },
-      { key: 'analytics.evals', path: '/dashboard/analytics/evals', icon: CheckCircle2 },
-      { key: 'analytics.insights', path: '/dashboard/analytics/insights', icon: Lightbulb },
-    ],
-  },
-  {
-    key: 'settings',
-    icon: Settings,
-    path: '/dashboard/settings/general',
-    children: [
-      { key: 'settings.general', path: '/dashboard/settings/general' },
-      { key: 'settings.security', path: '/dashboard/settings/security' },
-    ],
-  },
+    {
+        key: 'playground',
+        title: 'Playground',
+        icon: Bot,
+        path: '/dashboard/ai-agent',
+      },
+      {
+        key: 'channels',
+        title: 'Channels',
+        icon: FileText,
+        path: '/dashboard/channels',
+      },
+      {
+        key: 'activity',
+        title: 'Activity',
+        icon: Inbox,
+        path: '/dashboard/inbox',
+      },
+      {
+        key: 'actions',
+        title: 'Actions',
+        icon: Workflow,
+        path: '/dashboard/automations',
+      },
+      {
+        key: 'analytics',
+        title: 'Analytics',
+        icon: BarChart,
+        children: [
+          { key: 'analytics.general', path: '/dashboard/analytics/general', icon: BarChart },
+          { key: 'analytics.evals', path: '/dashboard/analytics/evals', icon: CheckCircle2 },
+          { key: 'analytics.insights', path: '/dashboard/analytics/insights', icon: Lightbulb },
+        ],
+      },
+      {
+        key: 'settings',
+        title: 'Settings',
+        icon: Cog,
+        children: [
+          { key: 'settings.general', path: '/dashboard/settings/general', icon: Cog },
+          { key: 'settings.security', path: '/dashboard/settings/security', icon: User },
+        ],
+      },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -115,12 +120,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
-  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
-  const [workspaceCreated, setWorkspaceCreated] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [workspaceUrl, setWorkspaceUrl] = useState('');
-  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | null>(null);
+  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | "create-workspace" | null>(null);
+
   type CreditsState = 'normal' | 'warning' | 'blocked';
 
   const agentCredits = {
@@ -143,12 +144,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   useEffect(() => {
     const dialog = searchParams.get("dialog");
-    if (dialog === "account" || dialog === "workspace" || dialog === "agents") {
-      setDialogOpen(dialog);
+    if (dialog) {
+      setDialogOpen(dialog as any);
+    } else {
+      setDialogOpen(null);
     }
   }, [searchParams]);
 
-  const openDialog = (dialog: "account" | "workspace" | "agents") => {
+  const openDialog = (dialog: "account" | "workspace" | "agents" | "create-workspace") => {
     setDialogOpen(dialog);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -166,261 +169,121 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     });
   };
 
-  const isActive = (path: string) => location.pathname === path;
-  const isParentActive = (item: NavItem) =>
-    item.children?.some((child) => location.pathname.startsWith(child.path));
-
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    analytics: location.pathname.startsWith('/dashboard/analytics'),
-    settings: true,
-  });
-
-  useEffect(() => {
-    setExpanded((prev) => ({
-      ...prev,
-      analytics: location.pathname.startsWith('/dashboard/analytics') || prev.analytics,
-    }));
-  }, [location.pathname]);
-
   const NavContent = () => (
-    <nav className="flex-1 px-3 py-4 space-y-1">
-      {navItems.map((item) => {
-        const hasChildren = Boolean(item.children?.length);
-        const active = item.path ? isActive(item.path) || isParentActive(item) : isParentActive(item);
-        return (
-          <div key={item.key} className="space-y-1">
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() => setExpanded((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-left',
-                  active ? 'bg-primary text-primary-foreground shadow-md' : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                )}
-              >
-                <item.icon className="h-5 w-5 flex-shrink-0" />
-                <AnimatePresence>
-                  {!collapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="flex items-center gap-2 text-sm font-medium whitespace-nowrap"
-                    >
-                      {t(`dashboard.${item.key}`)}
-                      <ChevronDown
-                        className={cn(
-                          'h-4 w-4 transition-transform',
-                          expanded[item.key] ? 'rotate-180' : 'rotate-0'
-                        )}
-                      />
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </button>
-            ) : (
-              <Link
-                to={item.path!}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-                  isActive(item.path!)
-                    ? 'bg-primary text-primary-foreground shadow-md'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                )}
-              >
-                <item.icon className="h-5 w-5 flex-shrink-0" />
-                <AnimatePresence>
-                  {!collapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-sm font-medium whitespace-nowrap"
-                    >
-                      {t(`dashboard.${item.key}`)}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </Link>
-            )}
-
-            {hasChildren && expanded[item.key] && (
-              <div className={cn('space-y-1', collapsed && 'hidden')}>
-                {item.children?.map((child) => (
-                  <Link
-                    key={child.key}
-                    to={child.path}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      'ml-9 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200',
-                      isActive(child.path)
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                    )}
-                  >
-                    {child.icon && <child.icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
-                    <span className="truncate">{t(`dashboard.${child.key}`)}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <nav className="flex-1 px-2 py-4 space-y-2">
+      {navItems.map((item) => (
+        <NavItemComponent key={item.key} item={item} collapsed={collapsed} />
+      ))}
     </nav>
   );
-  const handleCreateWorkspace = () => {
-    // TODO: later wire to real create-workspace flow
-    console.log("Create workspace clicked");
-  };
+  
+  const NavItemComponent = ({ item, collapsed }: { item: NavItem, collapsed: boolean }) => {
+      const { t } = useLanguage();
+      const location = useLocation();
+      const [isExpanded, setIsExpanded] = useState(
+          item.children?.some(child => location.pathname.startsWith(child.path)) || false
+      );
+  
+      const isParentActive = item.children?.some(child => location.pathname.startsWith(child.path)) || false;
+      const isActive = item.path ? location.pathname.startsWith(item.path) : isParentActive;
 
-  const AgentSwitcher = () => {
-    const { currentAgent, agents, setCurrentAgentId } = useAgentContext();
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            className="hidden md:flex items-center gap-2 h-9 px-3"
-          >
-            <Bot className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium truncate max-w-[140px]">{currentAgent?.name ?? "Select agent"}</span>
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          </Button>
-        </div>
-
-    return (
-      <>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="hidden md:flex items-center gap-2 h-9 px-3"
-            >
-              <Bot className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium truncate max-w-[140px]">{currentAgent?.name ?? "Select agent"}</span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Switch agent</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {agentOptions}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Credits & Agent Status */}
-        <div className="px-3 pb-4 space-y-3">
-          <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground">Messages</p>
-              <span className="text-xs font-semibold">
-                {agentCredits.used} / {agentCredits.limit}
-              </span>
-            </div>
-            <div className="mt-2 space-y-2">
-              <div className={cn("flex items-center justify-between text-xs", creditsStyles[creditsState].text)}>
-                <span>{Math.floor(Math.min(creditsPercent, 999))}% used</span>
-                {creditsState === 'blocked' ? (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="underline underline-offset-2 cursor-default">Over limit</span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">Usage has exceeded the plan limit.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : (
-                  <span>{creditsState === 'warning' ? 'Approaching limit' : 'Within limit'}</span>
-                )}
+      if (item.children) {
+          return (
+              <div>
+                  <button
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors duration-200 text-sm font-medium",
+                          isActive ? "text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent"
+                      )}
+                  >
+                      <item.icon className="h-5 w-5 flex-shrink-0" />
+                      {!collapsed && (
+                        <>
+                            <span>{item.title}</span>
+                            <ChevronDown className={cn("h-4 w-4 ml-auto transition-transform", isExpanded && "rotate-180")} />
+                        </>
+                      )}
+                  </button>
+                  <AnimatePresence>
+                      {!collapsed && isExpanded && (
+                          <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                          >
+                              <div
+                                  className={cn(
+                                      "pt-2 space-y-1",
+                                      "border-sidebar-accent",
+                                      isParentActive ? "border-primary" : "border-sidebar-accent",
+                                      dir === 'rtl' ? 'mr-3 pr-3 border-r' : 'ml-3 pl-3 border-l'
+                                  )}
+                              >
+                                  {item.children.map(child => (
+                                      <Link
+                                          key={child.key}
+                                          to={child.path}
+                                          className={cn(
+                                              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal transition-colors duration-200",
+                                              location.pathname.startsWith(child.path)
+                                                  ? "bg-primary/10 text-primary font-medium"
+                                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                                          )}
+                                      >
+                                          {child.icon && <child.icon className="h-4 w-4" />}
+                                          <span>{
+                                            (child.key.split('.').pop() || '')
+                                              .replace(/_/g, ' ')
+                                              .replace(/\b\w/g, l => l.toUpperCase())
+                                          }</span>
+                                      </Link>
+                                  ))}
+                              </div>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
               </div>
-              <Progress
-                value={Math.min(creditsPercent, 120)}
-                className="h-2"
-                indicatorClassName={creditsStyles[creditsState].bar}
-              />
-            </div>
-            {!collapsed && (
-              <div className="space-y-2 mt-3">
-                <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
-                <Button variant="outline" size="sm" className="w-full">
-                  Upgrade
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className={cn(
-            'flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg',
-            collapsed && 'justify-center'
-          )}>
-            <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            {!collapsed && (
-              <span className="text-xs font-medium text-accent">
-                {t('stats.active')}
-              </span>
-            )}
-          </div>
-        </div>
-      </motion.aside>
-
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-40 lg:hidden"
-            />
-            <motion.aside
-              initial={{ x: dir === 'rtl' ? 256 : -256 }}
-              animate={{ x: 0 }}
-              exit={{ x: dir === 'rtl' ? 256 : -256 }}
+          );
+      }
+  
+      return (
+          <Link
+              to={item.path!}
               className={cn(
-                'fixed top-0 bottom-0 w-full max-w-xs bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col shadow-lg',
-                dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200",
+                  isActive ? "bg-primary text-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
               )}
-            >
-              <Bot className="h-4 w-4" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{agent.name}</p>
-                <p a className="text-[11px] text-muted-foreground">ID: {agent.id}</p>
-              </div>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
+          >
+              <item.icon className="h-5 w-5 flex-shrink-0" />
+              {!collapsed && <span>{item.title}</span>}
+          </Link>
+      );
   };
 
   return (
     <AgentProvider>
-      <div className="min-h-screen bg-slate-50 flex" dir={dir}>
+      <div className="min-h-screen bg-background flex" dir={dir}>
         {/* Desktop Sidebar */}
         <motion.aside
           initial={false}
-          animate={{ width: collapsed ? 72 : 256 }}
+          animate={{ width: collapsed ? '4.5rem' : '16rem' }}
           className={cn(
-            'hidden lg:flex flex-col bg-slate-100 border-r border-sidebar-border',
+            'hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border h-screen',
             dir === 'rtl' ? 'border-l border-r-0' : ''
           )}
         >
           {/* Logo */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+          <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border flex-shrink-0">
             <AnimatePresence>
               {!collapsed && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="flex items="#">
-                  <span className="text-xl font-bold gradient-text">Tamm</span>
+                  className="flex items-center">
+                  <img src="/tamm.svg" alt="Tamm" className="h-8" />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -441,59 +304,36 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <NavContent />
 
           {/* Credits & Agent Status */}
-          <div className="px-3 pb-4 space-y-3">
-            <div className="rounded-lg border border-sidebar-border bg-background shadow-sm p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">Messages</p>
-                <span className="text-xs font-semibold">
-                  {agentCredits.used} / {agentCredits.limit}
-                </span>
-              </div>
-              <div className="mt-2 space-y-2">
-                <div className={cn("flex items-center justify-between text-xs", creditsStyles[creditsState].text)}>
-                  <span>{Math.floor(Math.min(creditsPercent, 999))}% used</span>
-                  {creditsState === 'blocked' ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="underline underline-offset-2 cursor-default">Over limit</span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="text-xs">Usage has exceeded the plan limit.</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : (
-                    <span>{creditsState === 'warning' ? 'Approaching limit' : 'Within limit'}</span>
-                  )}
-                </div>
-                <Progress
-                  value={Math.min(creditsPercent, 120)}
-                  className="h-2"
-                  indicatorClassName={creditsStyles[creditsState].bar}
-                />
-              </div>
-              {!collapsed && (
-                <div className="space-y-2 mt-3">
-                  <p className="text-xs text-muted-foreground">Reset date: {agentCredits.resetDate}</p>
-                  <Button variant="outline" size="sm" className="w-full min-h-[44px]">
-                    Upgrade
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <div className={cn(
-              'flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg',
-              collapsed && 'justify-center'
-            )}>
-              <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-              {!collapsed && (
-                <span className="text-xs font-medium text-accent">
-                  {t('stats.active')}
-                </span>
-              )}
-            </div>
+          <div className="px-3 pb-4 mt-auto flex-shrink-0">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="rounded-lg border bg-card text-card-foreground p-3 space-y-3">
+                      <div className={cn("flex items-center justify-between", collapsed && "justify-center")}>
+                          {!collapsed && <p className="text-xs font-medium text-muted-foreground">Messages</p>}
+                          <span className="text-xs font-semibold">
+                              {agentCredits.used} / {agentCredits.limit}
+                          </span>
+                      </div>
+                      <Progress
+                          value={creditsPercent}
+                          className="h-2"
+                          indicatorClassName={creditsStyles[creditsState].bar}
+                      />
+                      {!collapsed &&
+                        <Button variant="default" size="sm" className="w-full">
+                            Upgrade
+                        </Button>
+                      }
+                  </div>
+                </TooltipTrigger>
+                {collapsed && 
+                  <TooltipContent side="right">
+                    <p>{agentCredits.used} / {agentCredits.limit} Messages used</p>
+                  </TooltipContent>
+                }
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </motion.aside>
 
@@ -518,7 +358,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 )}
               >
                 <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-                  <span className="text-xl font-bold gradient-text">Tamm</span>
+                  <img src="/tamm.svg" alt="Tamm" className="h-8" />
                 </div>
                 <NavContent />
               </motion.aside>
@@ -527,9 +367,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </AnimatePresence>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 h-screen">
           {/* Top Bar */}
-          <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-6">
+          <header className="h-16 bg-background/95 backdrop-blur-sm shrink-0 border-b flex items-center justify-between px-4 lg:px-6">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -551,51 +391,37 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <LanguageToggle />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
                     <Avatar className="h-9 w-9">
                       <AvatarFallback>{user?.email?.[0]?.toUpperCase() ?? 'U'}</AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium">{user?.email}</span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {workspace?.name || 'My Workspace'}
-                    </span>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="font-normal p-3">
+                      <p className="text-sm font-semibold truncate">{user?.email}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                          {workspace?.name || 'My Workspace'}
+                      </p>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={(event) => {
-                    event.preventDefault();
-                    navigate('/dashboard/account');
-                  }}>
-                    <User className="h-4 w-4 mr-2" />
-                    Account
+                  <DropdownMenuItem onSelect={() => openDialog('account')} className="p-3">
+                      <User className="h-4 w-4 mr-3 text-muted-foreground" />
+                      <span>Account</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={(event) => {
-                    event.preventDefault();
-                    navigate('/dashboard/workspace-settings');
-                  }}>
-                    <Settings className="h-4 w-4 mr-2" />
-                    Workspace Settings
+
+                  <DropdownMenuItem onSelect={() => openDialog('agents')} className="p-3">
+                      <Users className="h-4 w-4 mr-3 text-muted-foreground" />
+                      <span>Manage Agents</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={(event) => {
-                    event.preventDefault();
-                    navigate('/dashboard/manage-agents');
-                  }}>
-                    <Users className="h-4 w-4 mr-2" />
-                    Manage Agents
+                  <DropdownMenuItem onSelect={() => openDialog('create-workspace')} className="p-3">
+                    <BadgePlus className="h-4 w-4 mr-3 text-muted-foreground" />
+                    <span>Create or Join Workspace</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      handleSignOut();
-                    }}
-                    className="text-destructive"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign Out
+                  <DropdownMenuItem onSelect={handleSignOut} className="text-destructive p-3">
+                      <LogOut className="h-4 w-4 mr-3" />
+                      <span>Sign Out</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -603,10 +429,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </header>
 
           {/* Page Content */}
-          <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
+          <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
             {children}
           </main>
         </div>
+
+
+        <AccountDialog open={dialogOpen === 'account'} onOpenChange={closeDialog} />
+        <CreateWorkspaceDialog open={dialogOpen === 'create-workspace'} onOpenChange={closeDialog} />
+        <ManageAgentsDialog open={dialogOpen === 'agents'} onOpenChange={closeDialog} />
       </div>
     </AgentProvider>
   );

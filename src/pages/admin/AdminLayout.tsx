@@ -1,6 +1,6 @@
 import { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Users, Building2, Bot, Activity, CreditCard, ListChecks, ShieldAlert, BookOpen, Tag } from "lucide-react";
+import { LayoutDashboard, Users, Building2, Bot, Activity, CreditCard, ListChecks, ShieldAlert, BookOpen, Tag, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 
@@ -14,6 +14,7 @@ const nav = [
   { to: "/admin/billing", label: "Billing", icon: CreditCard },
   { to: "/admin/audit", label: "Audit Logs", icon: ListChecks },
   { to: "/admin/docs", label: "Docs", icon: BookOpen },
+  { to: "/admin/marketing/landing", label: "Landing Page", icon: Send },
 ];
 
 export default function AdminLayout({ children }: PropsWithChildren) {
@@ -21,9 +22,9 @@ export default function AdminLayout({ children }: PropsWithChildren) {
     <div className="min-h-[calc(100vh-0px)] bg-background">
       <div className="grid grid-cols-[260px_1fr] gap-6 p-6">
         <aside className="rounded-xl border bg-card p-3">
-          <div className="px-3 py-2">
-            <div className="text-sm font-semibold">Tamm Admin</div>
-            <div className="text-xs text-muted-foreground">Manage customers & system</div>
+          <div className="px-3 py-2 flex items-center gap-2">
+            <img src="/tamm-logo.svg" alt="Tamm Logo" className="h-6" />
+            <span className="text-sm font-semibold">Admin</span>
           </div>
 
           <Separator className="my-3" />

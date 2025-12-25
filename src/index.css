@@ -16,7 +16,7 @@
 @layer base {
   :root {
     /* Background & Surface */
-    --background: 0 0% 100%;
+    --background: 220 14% 96%;
     --foreground: 220 14% 10%;
     
     /* Cards & Elevated Surfaces */
@@ -36,7 +36,7 @@
     --secondary-foreground: 220 14% 20%;
     
     /* Muted - Light Gray */
-    --muted: 220 14% 96%;
+    --muted: 220 14% 90%;
     --muted-foreground: 220 10% 50%;
     
     /* Accent - WhatsApp Green */

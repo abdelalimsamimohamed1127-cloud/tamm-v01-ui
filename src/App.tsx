@@ -13,9 +13,6 @@ import Automations from "@/pages/dashboard/Automations";
 import Evals from "@/pages/dashboard/Evals";
 import Insights from "@/pages/dashboard/Insights";
 import Analytics from "@/pages/dashboard/Analytics";
-import Account from "@/pages/dashboard/Account";
-import ManageAgents from "@/pages/dashboard/ManageAgents";
-import WorkspaceSettings from "@/pages/dashboard/WorkspaceSettings";
 import NotFound from "@/pages/NotFound";
 import Admin from "@/pages/admin/Admin";
 import { isSupabaseConfigured } from "@/integrations/supabase/client";
@@ -28,6 +25,8 @@ import AdminBilling from "@/pages/admin/Billing";
 import AdminAuditLogs from "@/pages/admin/AuditLogs";
 import AdminDocs from "@/pages/admin/Docs";
 import AdminPlans from "@/pages/admin/Plans";
+import Marketing from "@/pages/admin/Marketing";
+import LandingPageCMS from "@/pages/admin/LandingPageCMS";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Landing from "@/pages/Landing";
@@ -80,6 +79,7 @@ export default function App() {
         <Route path="account" element={<Navigate to="/dashboard?dialog=account" replace />} />
         <Route path="manage-agents" element={<Navigate to="/dashboard?dialog=agents" replace />} />
         <Route path="workspace-settings" element={<Navigate to="/dashboard?dialog=workspace" replace />} />
+        <Route path="create-workspace" element={<Navigate to="/dashboard?dialog=create-workspace" replace />} />
         <Route path="settings/*" element={<Settings />}>
           <Route index element={<SettingsIndexRedirect />} />
           <Route path="general" element={<SettingsGeneral />} />
@@ -99,6 +99,10 @@ export default function App() {
         <Route path="billing" element={<AdminBilling />} />
         <Route path="audit" element={<AdminAuditLogs />} />
         <Route path="docs" element={<AdminDocs />} />
+        <Route path="marketing" element={<Marketing />}>
+            <Route index element={<Navigate to="landing" replace />} />
+            <Route path="landing" element={<LandingPageCMS />} />
+        </Route>
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/dashboard/admin/*" element={<Admin />}>

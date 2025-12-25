@@ -17,59 +17,70 @@ export default {
         sans: ["IBM Plex Sans", "IBM Plex Sans Arabic", "system-ui", "sans-serif"],
       },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+        border: "hsl(var(--border))", // Subtle, soft border
+        input: "hsl(var(--input))",   // Input field borders
+        ring: "hsl(var(--ring))",     // Focus ring, soft
+        
+        // --- Core Neutrals ---
+        background: "hsl(var(--background))", // Main app background, soft warm-neutral
+        foreground: "hsl(var(--foreground))", // Default text, darker soft grey
+        
+        card: {
+          DEFAULT: "hsl(var(--card))", // Card background, slightly lighter than main background
+          foreground: "hsl(var(--card-foreground))", // Card text
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: "hsl(var(--popover))", // Popover background
+          foreground: "hsl(var(--popover-foreground))", // Popover text
         },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+
+        // --- Primary Action ---
+        primary: {
+          DEFAULT: "hsl(var(--primary))", // Confident enterprise blue
+          foreground: "hsl(var(--primary-foreground))", // Text on primary
         },
+
+        // --- Secondary UI Elements & Muted States ---
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))", // For secondary buttons, subtle backgrounds
+          foreground: "hsl(var(--secondary-foreground))", // Text on secondary
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))", // For secondary text, disabled states, light fills
+          foreground: "hsl(var(--muted-foreground))", // Text on muted backgrounds
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))", // For hover states, subtle highlights
+          foreground: "hsl(var(--accent-foreground))", // Text on accent
+        },
+
+        // --- Semantic Colors (Muted) ---
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))", // Muted red for errors
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        success: "hsl(var(--success))",   // Soft green
+        warning: "hsl(var(--warning))",   // Low saturation amber/yellow
+        info: "hsl(var(--info))",         // Existing info color
+
+        // --- Sidebar Specifics ---
         sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
+          DEFAULT: "hsl(var(--sidebar-background))", // Slightly different from main background
           foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
+          primary: "hsl(var(--sidebar-primary))", // For active sidebar items
           "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
           accent: "hsl(var(--sidebar-accent))",
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        // Channel colors
+
+        // --- Channel colors (Preserved) ---
         whatsapp: "hsl(var(--whatsapp))",
         instagram: "hsl(var(--instagram))",
         facebook: "hsl(var(--facebook))",
         tiktok: "hsl(var(--tiktok))",
         webchat: "hsl(var(--webchat))",
-        // Status colors
-        success: "hsl(var(--success))",
-        warning: "hsl(var(--warning))",
-        info: "hsl(var(--info))",
       },
       borderRadius: {
         lg: "var(--radius)",
