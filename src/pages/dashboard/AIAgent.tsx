@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Agent, deactivateAgent, reactivateAgent } from "@/services/agents";
-import { useAgentContext } from "@/contexts/AgentContext";
+import { useAgent } from "@/hooks/useAgent";
 
 type KnowledgeTab = "files" | "website" | "text" | "qna" | null;
 
@@ -150,7 +150,7 @@ export default function AIAgent() {
   const [leftWidth, setLeftWidth] = useState(42); // percent
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
-  const { currentAgent, setAgentActiveState } = useAgentContext();
+  const { currentAgent, setAgentActiveState } = useAgent();
   const agent = currentAgent as Agent | null;
   const [updatingStatus, setUpdatingStatus] = useState(false);
 

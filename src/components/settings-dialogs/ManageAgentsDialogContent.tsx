@@ -44,8 +44,8 @@ export default function ManageAgentsDialogContent() {
   };
 
   return (
-    <div className="w-full max-w-3xl">
-      <ScrollArea className="h-[70vh] pr-2">
+    <div className="w-full max-w-3xl flex flex-col flex-1">
+      <ScrollArea className="flex-1 pr-2">
         <div className="space-y-4">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Manage agents</h2>

@@ -1,23 +1,10 @@
 import { useContext } from 'react';
-import type { Workspace } from '@/contexts/WorkspaceContext';
 import { WorkspaceContext } from '@/contexts/WorkspaceContext';
 
-interface WorkspaceHookValue {
-  workspace: Workspace | null;
-  isLoading: boolean;
-  refreshWorkspace: () => Promise<void>;
-}
-
-export function useWorkspace(): WorkspaceHookValue {
-  const context = useContext(WorkspaceContext);
-
-  if (!context) {
-    return {
-      workspace: null,
-      isLoading: true,
-      refreshWorkspace: async () => {},
-    };
+export function useWorkspace() {
+  const ctx = useContext(WorkspaceContext);
+  if (!ctx) {
+    throw new Error("useWorkspace must be used within WorkspaceProvider");
   }
-
-  return context;
+  return ctx;
 }

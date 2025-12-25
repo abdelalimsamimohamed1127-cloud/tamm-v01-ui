@@ -44,11 +44,38 @@ const getSupabaseCredentials = (): SupabaseCredentials => {
 const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = getSupabaseCredentials()
 const browserStorage = typeof window !== 'undefined' ? window.localStorage : undefined
 
+// Custom fetch implementation to inject X-Workspace-ID header
+const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const clonedInit = init ? { ...init } : {};
+  if (!clonedInit.headers) {
+    clonedInit.headers = {};
+  }
+
+  const activeWorkspaceId = localStorage.getItem('activeWorkspaceId');
+  if (activeWorkspaceId) {
+    // Ensure headers are treated as a Headers object or a plain object
+    if (clonedInit.headers instanceof Headers) {
+      clonedInit.headers.set('X-Workspace-ID', activeWorkspaceId);
+    } else {
+      clonedInit.headers = {
+        ...clonedInit.headers,
+        'X-Workspace-ID': activeWorkspaceId,
+      };
+    }
+  }
+
+  return fetch(input, clonedInit);
+};
+
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     storage: browserStorage,
+  },
+  global: {
+    fetch: customFetch, // Use the custom fetch function
   },
 })
 

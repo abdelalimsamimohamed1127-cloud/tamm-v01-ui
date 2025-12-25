@@ -3,12 +3,17 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useWorkspaces } from '@/contexts/WorkspaceContext'; // New import
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Users } from "lucide-react";
 import { AgentProvider } from '@/contexts/AgentContext'
+import { WorkspaceProvider } from '@/contexts/WorkspaceContext' // New import
+import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher' // New import
+import { AgentSwitcher } from '@/components/agent/AgentSwitcher' // New import
+
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -114,7 +119,9 @@ const navItems: NavItem[] = [
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const { t, dir } = useLanguage();
-  const { workspace } = useWorkspace();
+  const { activeWorkspace } = useWorkspaces(); // Use the new context
+  const { workspace } = useWorkspace(); // Keep for dropdown label for now
+
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -263,182 +270,190 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   };
 
   return (
-    <AgentProvider>
-      <div className="min-h-screen bg-background flex" dir={dir}>
-        {/* Desktop Sidebar */}
-        <motion.aside
-          initial={false}
-          animate={{ width: collapsed ? '4.5rem' : '16rem' }}
-          className={cn(
-            'hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border h-screen',
-            dir === 'rtl' ? 'border-l border-r-0' : ''
-          )}
-        >
-          {/* Logo */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border flex-shrink-0">
-            <AnimatePresence>
-              {!collapsed && (
+    <WorkspaceProvider> {/* Wrap with WorkspaceProvider */}
+      <AgentProvider> {/* AgentProvider is already here */}
+        <div className="min-h-screen bg-background flex" dir={dir}>
+          {/* Desktop Sidebar */}
+          <motion.aside
+            initial={false}
+            animate={{ width: collapsed ? '4.5rem' : '16rem' }}
+            className={cn(
+              'hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border h-screen',
+              dir === 'rtl' ? 'border-l border-r-0' : ''
+            )}
+          >
+            {/* Logo */}
+            <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border flex-shrink-0">
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center">
+                    <img src="/tamm.svg" alt="Tamm" className="h-8" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCollapsed(!collapsed)}
+                className="h-8 w-8"
+              >
+                {(collapsed ? (dir === 'rtl' ? ChevronLeft : ChevronRight) : (dir === 'rtl' ? ChevronRight : ChevronLeft)) && (
+                  collapsed ? 
+                    (dir === 'rtl' ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : 
+                    (dir === 'rtl' ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />)
+                )}
+              </Button>
+            </div>
+
+            <NavContent />
+
+            {/* Credits & Agent Status */}
+            <div className="px-3 pb-4 mt-auto flex-shrink-0">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="rounded-lg border bg-card text-card-foreground p-3 space-y-3">
+                        <div className={cn("flex items-center justify-between", collapsed && "justify-center")}>
+                            {!collapsed && <p className="text-xs font-medium text-muted-foreground">Messages</p>}
+                            <span className="text-xs font-semibold">
+                                {agentCredits.used} / {agentCredits.limit}
+                            </span>
+                        </div>
+                        <Progress
+                            value={creditsPercent}
+                            className="h-2"
+                            indicatorClassName={creditsStyles[creditsState].bar}
+                        />
+                        {!collapsed &&
+                          <Button variant="default" size="sm" className="w-full">
+                              Upgrade
+                          </Button>
+                        }
+                    </div>
+                  </TooltipTrigger>
+                  {collapsed && 
+                    <TooltipContent side="right">
+                      <p>{agentCredits.used} / {agentCredits.limit} Messages used</p>
+                    </TooltipContent>
+                  }
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </motion.aside>
+
+          {/* Mobile Sidebar Overlay */}
+          <AnimatePresence>
+            {mobileOpen && (
+              <>
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="flex items-center">
-                  <img src="/tamm.svg" alt="Tamm" className="h-8" />
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCollapsed(!collapsed)}
-              className="h-8 w-8"
-            >
-              {(collapsed ? (dir === 'rtl' ? ChevronLeft : ChevronRight) : (dir === 'rtl' ? ChevronRight : ChevronLeft)) && (
-                collapsed ? 
-                  (dir === 'rtl' ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : 
-                  (dir === 'rtl' ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />)
-              )}
-            </Button>
-          </div>
-
-          <NavContent />
-
-          {/* Credits & Agent Status */}
-          <div className="px-3 pb-4 mt-auto flex-shrink-0">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="rounded-lg border bg-card text-card-foreground p-3 space-y-3">
-                      <div className={cn("flex items-center justify-between", collapsed && "justify-center")}>
-                          {!collapsed && <p className="text-xs font-medium text-muted-foreground">Messages</p>}
-                          <span className="text-xs font-semibold">
-                              {agentCredits.used} / {agentCredits.limit}
-                          </span>
-                      </div>
-                      <Progress
-                          value={creditsPercent}
-                          className="h-2"
-                          indicatorClassName={creditsStyles[creditsState].bar}
-                      />
-                      {!collapsed &&
-                        <Button variant="default" size="sm" className="w-full">
-                            Upgrade
-                        </Button>
-                      }
+                  onClick={() => setMobileOpen(false)}
+                  className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-40 lg:hidden"
+                />
+                <motion.aside
+                  initial={{ x: dir === 'rtl' ? 256 : -256 }}
+                  animate={{ x: 0 }}
+                  exit={{ x: dir === 'rtl' ? 256 : -256 }}
+                  className={cn(
+                    'fixed top-0 bottom-0 w-full max-w-xs bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col shadow-lg',
+                    dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
+                  )}
+                >
+                  <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
+                    <img src="/tamm.svg" alt="Tamm" className="h-8" />
                   </div>
-                </TooltipTrigger>
-                {collapsed && 
-                  <TooltipContent side="right">
-                    <p>{agentCredits.used} / {agentCredits.limit} Messages used</p>
-                  </TooltipContent>
-                }
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </motion.aside>
+                  <NavContent />
+                </motion.aside>
+              </>
+            )}
+          </AnimatePresence>
 
-        {/* Mobile Sidebar Overlay */}
-        <AnimatePresence>
-          {mobileOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setMobileOpen(false)}
-                className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-40 lg:hidden"
-              />
-              <motion.aside
-                initial={{ x: dir === 'rtl' ? 256 : -256 }}
-                animate={{ x: 0 }}
-                exit={{ x: dir === 'rtl' ? 256 : -256 }}
-                className={cn(
-                  'fixed top-0 bottom-0 w-full max-w-xs bg-sidebar border-r border-sidebar-border z-50 lg:hidden flex flex-col shadow-lg',
-                  dir === 'rtl' ? 'right-0 border-l border-r-0' : 'left-0'
-                )}
-              >
-                <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-                  <img src="/tamm.svg" alt="Tamm" className="h-8" />
-                </div>
-                <NavContent />
-              </motion.aside>
-            </>
-          )}
-        </AnimatePresence>
+          {/* Main Content */}
+          <div className="flex-1 flex flex-col min-w-0 h-screen">
+            {/* Top Bar */}
+            <header className="h-16 bg-background/95 backdrop-blur-sm shrink-0 border-b flex items-center justify-between px-4 lg:px-6">
+              {/* Left Group: Mobile Menu, Logo, Workspace/Agent Switchers */}
+              <div className="flex items-center gap-3 sm:gap-4"> {/* Adjusted gap for better spacing */}
+                {/* Mobile Menu Button - always visible on lg:hidden */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setMobileOpen(true)}
+                  className="lg:hidden"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+                
+                
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 h-screen">
-          {/* Top Bar */}
-          <header className="h-16 bg-background/95 backdrop-blur-sm shrink-0 border-b flex items-center justify-between px-4 lg:px-6">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setMobileOpen(true)}
-                className="lg:hidden"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              <div className="hidden sm:block">
-                <h2 className="text-sm font-medium">{workspace?.name || 'My Workspace'}</h2>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Sparkles className="h-3 w-3 text-accent" />
-                  <span className="capitalize">{workspace?.plan || 'Free'} Plan</span>
+                {/* Workspace and Agent Switchers - responsive stacking */}
+                <div className="flex items-center gap-2">
+                  <WorkspaceSwitcher onCreateWorkspaceClick={() => openDialog('create-workspace')} />
+                  <span className="text-muted-foreground hidden sm:inline">/</span>
+                  <AgentSwitcher onCreateAgentClick={() => openDialog('agents')} />
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <LanguageToggle />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
-                    <Avatar className="h-9 w-9">
-                      <AvatarFallback>{user?.email?.[0]?.toUpperCase() ?? 'U'}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel className="font-normal p-3">
-                      <p className="text-sm font-semibold truncate">{user?.email}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                          {workspace?.name || 'My Workspace'}
-                      </p>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => openDialog('account')} className="p-3">
-                      <User className="h-4 w-4 mr-3 text-muted-foreground" />
-                      <span>Account</span>
-                  </DropdownMenuItem>
+              
+              {/* Right Group: Language Toggle, User Dropdown */}
+              <div className="flex items-center gap-3">
+                <LanguageToggle />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback>{user?.email?.[0]?.toUpperCase() ?? 'U'}</AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel className="font-normal p-3">
+                        <p className="text-sm font-semibold truncate">{user?.email}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                            {activeWorkspace?.name || 'My Workspace'}
+                        </p>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => openDialog('account')} className="p-3">
+                        <User className="h-4 w-4 mr-3 text-muted-foreground" />
+                        <span>Account</span>
+                    </DropdownMenuItem>
 
-                  <DropdownMenuItem onSelect={() => openDialog('agents')} className="p-3">
-                      <Users className="h-4 w-4 mr-3 text-muted-foreground" />
-                      <span>Manage Agents</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => openDialog('create-workspace')} className="p-3">
-                    <BadgePlus className="h-4 w-4 mr-3 text-muted-foreground" />
-                    <span>Create or Join Workspace</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={handleSignOut} className="text-destructive p-3">
-                      <LogOut className="h-4 w-4 mr-3" />
-                      <span>Sign Out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </header>
+                    <DropdownMenuItem onSelect={() => openDialog('agents')} className="p-3">
+                        <Users className="h-4 w-4 mr-3 text-muted-foreground" />
+                        <span>Manage Agents</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => openDialog('create-workspace')} className="p-3">
+                      <BadgePlus className="h-4 w-4 mr-3 text-muted-foreground" />
+                      <span>Create or Join Workspace</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={handleSignOut} className="text-destructive p-3">
+                        <LogOut className="h-4 w-4 mr-3" />
+                        <span>Sign Out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </header>
 
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
-            {children}
-          </main>
+            {/* Page Content */}
+            <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+              {children}
+            </main>
+          </div>
+
+
+          <AccountDialog open={dialogOpen === 'account'} onOpenChange={closeDialog} />
+          <CreateWorkspaceDialog open={dialogOpen === 'create-workspace'} onOpenChange={closeDialog} />
+          <ManageAgentsDialog open={dialogOpen === 'agents'} onOpenChange={closeDialog} />
         </div>
-
-
-        <AccountDialog open={dialogOpen === 'account'} onOpenChange={closeDialog} />
-        <CreateWorkspaceDialog open={dialogOpen === 'create-workspace'} onOpenChange={closeDialog} />
-        <ManageAgentsDialog open={dialogOpen === 'agents'} onOpenChange={closeDialog} />
-      </div>
-    </AgentProvider>
+      </AgentProvider>
+    </WorkspaceProvider>
   );
 }

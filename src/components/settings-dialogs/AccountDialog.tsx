@@ -19,7 +19,7 @@ export default function AccountDialog({ open, onOpenChange }: { open: boolean, o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-full flex flex-col sm:h-[90vh]">
+      <DialogContent className="w-full sm:max-w-4xl h-full flex flex-col sm:h-[90vh]">
         <DialogHeader>
           <DialogTitle>Account Settings</DialogTitle>
           <DialogDescription>
@@ -34,11 +34,11 @@ export default function AccountDialog({ open, onOpenChange }: { open: boolean, o
                 <CardDescription>Update your personal details.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
                   <Avatar className="h-16 w-16">
                     <AvatarFallback className="text-xl">{name.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  <div className="space-y-2 flex-1 max-w-sm">
+                  <div className="space-y-2 w-full sm:flex-1 sm:max-w-sm">
                     <p className="text-sm font-medium">Display Name</p>
                     <Input value={name} onChange={(e) => setName(e.target.value)} />
                   </div>

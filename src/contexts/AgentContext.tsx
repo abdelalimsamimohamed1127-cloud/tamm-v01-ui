@@ -1,46 +1,116 @@
-import { createContext, useContext, useMemo, useState } from "react";
+// src/contexts/AgentContext.tsx
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Agent } from '@/types/primitives';
+import { useWorkspaces } from './WorkspaceContext'; // Dependency on WorkspaceContext
 
-type Agent = {
-  id: string;
-  name: string;
-};
+// --- Type Definitions ---
 
 interface AgentContextValue {
+  agentId: string | null;
   agents: Agent[];
-  currentAgentId: string;
-  currentAgent: Agent | null;
-  setCurrentAgentId: (id: string) => void;
+  setAgent: (id: string) => void;
+  isLoading: boolean;
+  activeAgent: Agent | null;
 }
 
-const AgentContext = createContext<AgentContextValue | undefined>(undefined);
+// --- Context Definition ---
 
-const defaultAgents: Agent[] = [
-  { id: "agt_001", name: "Default Agent" },
-  { id: "agt_002", name: "Support Bot" },
-  { id: "agt_003", name: "Sales Assistant" },
-];
+export const AgentContext = createContext<AgentContextValue | undefined>(undefined);
 
-export function AgentProvider({ children }: { children: React.ReactNode }) {
-  const [agents] = useState<Agent[]>(defaultAgents);
-  const [currentAgentId, setCurrentAgentId] = useState<string>(defaultAgents[0]?.id ?? "");
+// --- Provider Component ---
 
-  const value = useMemo<AgentContextValue>(() => {
-    const currentAgent = agents.find((agent) => agent.id === currentAgentId) ?? agents[0] ?? null;
-    return {
-      agents,
-      currentAgentId: currentAgent?.id ?? currentAgentId,
-      currentAgent,
-      setCurrentAgentId,
+interface AgentProviderProps {
+  children: ReactNode;
+}
+
+export const AgentProvider: React.FC<AgentProviderProps> = ({ children }) => {
+  const { workspaceId, isLoading: isWorkspaceLoading } = useWorkspaces();
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentId, setAgentIdState] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Set initial agentId from localStorage, scoped by workspaceId
+  useEffect(() => {
+    if (workspaceId) {
+      const storedAgentId = localStorage.getItem(`activeAgentId_${workspaceId}`);
+      setAgentIdState(storedAgentId);
+    } else {
+      setAgentIdState(null);
+    }
+  }, [workspaceId]);
+
+  // Fetch agents when the workspace changes
+  useEffect(() => {
+    if (!workspaceId || isWorkspaceLoading) {
+      setAgents([]);
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchAgents = async () => {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('agents')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .neq('status', 'archived');
+
+      if (error) {
+        console.error(`Error fetching agents for workspace ${workspaceId}:`, error);
+        setAgents([]);
+      } else {
+        const fetchedAgents = data as Agent[];
+        setAgents(fetchedAgents);
+        
+        // Behavior Rule: If selected agent no longer exists, fallback to first available agent.
+        const currentAgentExists = fetchedAgents.some(a => a.id === agentId);
+        if (!currentAgentExists && fetchedAgents.length > 0) {
+          setAgent(fetchedAgents[0].id);
+        } else if (fetchedAgents.length === 0) {
+            setAgent(null); // No agents available
+        }
+      }
+      setIsLoading(false);
     };
-  }, [agents, currentAgentId]);
 
-  return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
-}
+    fetchAgents();
+  }, [workspaceId, isWorkspaceLoading]);
+  
+  const setAgent = (id: string | null) => {
+    if (id && workspaceId) {
+      localStorage.setItem(`activeAgentId_${workspaceId}`, id);
+    } else if (workspaceId) {
+      localStorage.removeItem(`activeAgentId_${workspaceId}`);
+    }
+    setAgentIdState(id);
+  };
 
-export function useAgentContext() {
-  const ctx = useContext(AgentContext);
-  if (!ctx) {
-    throw new Error("useAgentContext must be used within an AgentProvider");
+  const activeAgent = useMemo(() => {
+    return agents.find(a => a.id === agentId) || null;
+  }, [agentId, agents]);
+
+  const value: AgentContextValue = {
+    agentId,
+    agents,
+    setAgent,
+    isLoading: isLoading || isWorkspaceLoading,
+    activeAgent,
+  };
+
+  return (
+    <AgentContext.Provider value={value}>
+      {children}
+    </AgentContext.Provider>
+  );
+};
+
+// --- Hook for consuming the context ---
+
+export const useAgents = (): AgentContextValue => {
+  const context = useContext(AgentContext);
+  if (context === undefined) {
+    throw new Error('useAgents must be used within an AgentProvider');
   }
-  return ctx;
-}
+  return context;
+};

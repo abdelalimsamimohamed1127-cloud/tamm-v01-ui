@@ -141,10 +141,10 @@ export default function ManageAgentsDialog({
 
   return (
     // Overlay
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
       
       {/* Modal Container */}
-      <div className="relative w-full max-w-5xl h-[85vh] bg-card rounded-lg shadow-lg flex overflow-hidden border border-border">
+      <div className="relative w-full max-w-5xl h-full sm:h-[85vh] bg-card rounded-lg shadow-lg flex overflow-hidden border border-border">
         
         {/* Close Button */}
         <button 
@@ -155,7 +155,7 @@ export default function ManageAgentsDialog({
         </button>
 
         {/* 1️⃣ Left Sidebar */}
-        <div className="w-64 flex-shrink-0 bg-sidebar border-r border-border flex flex-col">
+        <div className="hidden sm:flex w-64 flex-shrink-0 bg-sidebar border-r border-border flex-col">
           <div className="p-6">
             <h3 className="text-lg font-semibold text-foreground">Settings</h3>
           </div>
@@ -235,38 +235,52 @@ export default function ManageAgentsDialog({
         {/* 2️⃣ Right Main Content Panel */}
         <div className="flex-1 flex flex-col min-w-0 bg-background">
           {/* Fixed Header for Right Panel */}
-          <div className="flex items-center justify-between p-6 border-b border-border bg-card/95 backdrop-blur-sm">
-            <WorkspaceSelectorDropdown />
-            <h1 className="text-xl font-bold text-foreground">{getMainContentTitle()}</h1>
+          <div className="flex items-center justify-between p-4 border-b border-border bg-card/95 backdrop-blur-sm sm:p-6">
+            <h1 className="text-xl font-bold text-foreground hidden sm:block">{getMainContentTitle()}</h1> {/* Hide on mobile */}
+            
+            {/* Mobile View Selector */}
+            <select
+                value={activeSection}
+                onChange={(e) => setActiveSection(e.target.value as ViewState)}
+                className="block sm:hidden h-10 w-full appearance-none rounded-md border border-border bg-card pl-3 pr-8 text-base text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+                <option value="agents">Agents</option>
+                <option value="usage">Usage</option>
+                <option value="settings-general">General Settings</option>
+                <option value="settings-members">Members</option>
+                <option value="settings-plans">Plans</option>
+                <option value="settings-billing">Billing</option>
+            </select>
+            <WorkspaceSelectorDropdown /> {/* Keep on desktop, but make responsive */}
           </div>
           
           {/* Scrollable Area */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-8 max-w-4xl mx-auto">
+          <div className="flex-1 overflow-y-auto flex flex-col">
+            <div className="p-4 max-w-4xl mx-auto sm:p-8 flex-1 flex flex-col">
               
               {/* Conditional Content Rendering */}
               {activeSection === 'agents' && (
-                <div className="space-y-6">
-                  <div className="mt-6">
+                <div className="space-y-6 flex-1 flex flex-col">
+                  <div className="mt-6 flex-1 flex flex-col">
                     <AgentsList setActiveSection={setActiveSection} />
                   </div>
                 </div>
               )}
               {activeSection === 'usage' && (
-                <div className="space-y-6">
-                  <div className="mt-6">
+                <div className="space-y-6 flex-1 flex flex-col">
+                  <div className="mt-6 flex-1 flex flex-col">
                     <UsageAnalytics />
                   </div>
                 </div>
               )}
               {(activeSection.startsWith('settings-')) && (
-                <div className="space-y-6">
+                <div className="space-y-6 flex-1 flex flex-col">
                   <WorkspaceSettingsPanel activeSettingTab={activeSection.replace('settings-', '') as SettingsTab} />
                 </div>
               )}
               {activeSection === 'create-agent' && (
-                <div className="space-y-6">
-                  <div className="mt-6">
+                <div className="space-y-6 flex-1 flex flex-col">
+                  <div className="mt-6 flex-1 flex flex-col">
                     <CreateAgentForm setActiveSection={setActiveSection} />
                   </div>
                 </div>
