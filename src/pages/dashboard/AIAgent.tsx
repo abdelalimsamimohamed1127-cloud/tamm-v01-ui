@@ -1,915 +1,320 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import {
-  Smile,
-  Send,
-  RotateCcw,
-  Upload,
-  Globe,
-  FileText,
-  Database,
-  HelpCircle,
-  Info,
-  Loader2,
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { Agent, deactivateAgent, reactivateAgent } from "@/services/agents";
+import React, { useRef, useState, useEffect } from "react"; // Added useEffect
 import { useAgent } from "@/hooks/useAgent";
-
-type KnowledgeTab = "files" | "website" | "text" | "qna" | null;
-
-type SourceTotals = {
-  filesKB: number;
-  websiteKB: number;
-  textKB: number;
-  qnaKB: number;
-  limitKB: number;
-};
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function formatKB(kb: number) {
-  if (kb >= 1024) return `${(kb / 1024).toFixed(1)} MB`;
-  return `${kb.toFixed(0)} KB`;
-}
-
-function SourceCard({
-  icon: Icon,
-  title,
-  desc,
-  onClick,
-  disabled,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  desc: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={[
-        "group w-full text-left border rounded-xl p-4 transition-all",
-        "hover:shadow-sm hover:-translate-y-[1px]",
-        "focus:outline-none focus:ring-2 focus:ring-blue-500/50",
-        disabled ? "opacity-50 cursor-not-allowed" : "bg-white",
-      ].join(" ")}
-    >
-      <Icon className="h-5 w-5 mb-2 text-muted-foreground group-hover:text-foreground transition-colors" />
-      <p className="font-medium text-sm">{title}</p>
-      <p className="text-xs text-muted-foreground">{desc}</p>
-    </button>
-  );
-}
-
-function ModalShell({
-  title,
-  subtitle,
-  onClose,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in"
-      role="dialog"
-      aria-modal="true"
-      onMouseDown={(e) => {
-        // close only if backdrop clicked
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-2xl mx-4 rounded-2xl bg-white shadow-xl border overflow-hidden animate-in zoom-in-95">
-        {/* Header */}
-        <div className="px-5 py-4 border-b flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h3 className="text-base sm:text-lg font-semibold truncate">
-              {title}
-            </h3>
-            {subtitle ? (
-              <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
-            ) : null}
-          </div>
-
-          <button
-            type="button"
-            className="rounded-full p-2 hover:bg-muted transition"
-            onClick={onClose}
-            aria-label="Close"
-            title="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-/////////timer - badge////////
-function formatRelativeTime(date: string | null | undefined) {
-  if (!date) return "Never trained";
-
-  const diffMs = Date.now() - new Date(date).getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays <= 0) return "Today";
-  if (diffDays === 1) return "1 day ago";
-  return `${diffDays} days ago`;
-}
-
-//////////////////
+import { AgentSettings } from "@/components/ai-agent/AgentSettings";
+import { AgentPlayground } from "@/components/ai-agent/AgentPlayground";
+import { AgentKnowledge } from "@/components/ai-agent/AgentKnowledge";
+import { Loader2, Info, Save, UploadCloud, History } from "lucide-react"; // Import new icons
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  createDraftVersion,
+  publishDraft,
+  rollbackAgent,
+  listAgentVersions,
+  AgentVersion,
+} from "@/services/agents"; // Import new service functions
 
 export default function AIAgent() {
-  /* =============================
-     RESIZE SLIDER (LEFT / RIGHT)
-  ============================== */
   const containerRef = useRef<HTMLDivElement>(null);
-  const [leftWidth, setLeftWidth] = useState(42); // percent
-  const [isDragging, setIsDragging] = useState(false);
+  const [activeTab, setActiveTab] = useState("settings");
+
+  const {
+    activeAgent,
+    isLoading: isAgentContextLoading,
+    error: agentContextError,
+    refreshAgents, // Destructure refreshAgents
+  } = useAgent();
+
   const { toast } = useToast();
-  const { currentAgent, setAgentActiveState } = useAgent();
-  const agent = currentAgent as Agent | null;
-  const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+  const [agentVersions, setAgentVersions] = useState<AgentVersion[]>([]);
+  const [selectedRollbackVersionId, setSelectedRollbackVersionId] = useState<string | null>(null);
+  const [isPublishConfirmationOpen, setIsPublishConfirmationOpen] = useState(false);
+  const [isRollbackConfirmationOpen, setIsRollbackConfirmationOpen] = useState(false);
+
+
+  // Fetch agent versions when activeAgent changes
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!isDragging || !containerRef.current) return;
-
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = (x / rect.width) * 100;
-
-      // limits like your previous slider
-      const next = clamp(pct, 30, 60);
-      setLeftWidth(next);
-    };
-
-    const onUp = () => setIsDragging(false);
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [isDragging]);
-
-  /* =============================
-     PAGE STATE
-  ============================== */
-  const [rules, setRules] = useState("");
-  const [message, setMessage] = useState("");
-  const [activeSource, setActiveSource] = useState<KnowledgeTab>(null);
-  /* =============================
-   SOURCES STATE (UI SAFE)
-   DO NOT TOUCH UI
-============================= */
-
-type AgentSource = {
-  id: string;
-  type: "file" | "files" | "website" | "text" | "catalog" | "qa" | "qna";
-  meta?: {
-    size_kb?: number;
-    [key: string]: any;
-  };
-};
-
-type SourcesState =
-  | { status: "empty"; sources: AgentSource[] }
-  | { status: "loaded"; sources: AgentSource[] };
-
-const [sourcesState, setSourcesState] = useState<SourcesState>({
-  status: "empty",
-  sources: [],
-});
-
-const [sourcesLoading, setSourcesLoading] = useState(false);
-
-  /* =============================
-     MOBILE TABS (ADD ONLY)
-  ============================== */
-  const [mobileTab, setMobileTab] =
-    useState<"settings" | "preview">("preview");
-
-  const isMobile =
-    typeof window !== "undefined" && window.innerWidth < 1024;
-
-  const totals: SourceTotals = useMemo(() => {
-    const base: SourceTotals = { filesKB: 0, websiteKB: 0, textKB: 0, qnaKB: 0, limitKB: 400 };
-
-    if (sourcesState.status === "empty") return base;
-
-    return sourcesState.sources.reduce<SourceTotals>((acc, source) => {
-      const sizeKb = typeof (source.meta as any)?.size_kb === "number" ? (source.meta as any).size_kb : 0;
-
-      switch (source.type) {
-        case "file":
-        case "files":
-          acc.filesKB += sizeKb;
-          break;
-        case "website":
-          acc.websiteKB += sizeKb;
-          break;
-        case "text":
-        case "catalog":
-          acc.textKB += sizeKb;
-          break;
-        case "qa":
-        case "qna":
-          acc.qnaKB += sizeKb;
-          break;
-        default:
-          break;
-      }
-
-      return acc;
-    }, base);
-  }, [sourcesState]);
-
-  const sourceCounts = useMemo(() => {
-    const counts = { files: 0, website: 0, text: 0, qna: 0 };
-
-    if (sourcesState.status === "empty") return counts;
-
-    sourcesState.sources.forEach((source) => {
-      switch (source.type) {
-        case "file":
-        case "files":
-          counts.files += 1;
-          break;
-        case "website":
-          counts.website += 1;
-          break;
-        case "text":
-        case "catalog":
-          counts.text += 1;
-          break;
-        case "qa":
-        case "qna":
-          counts.qna += 1;
-          break;
-        default:
-          break;
-      }
-    });
-
-    return counts;
-  }, [sourcesState]);
-
-  const usedKB = totals.filesKB + totals.websiteKB + totals.textKB + totals.qnaKB;
-  const usagePct = clamp((usedKB / totals.limitKB) * 100, 0, 100);
-
-  // Form states inside modal (UI-only)
-  const [textTitle, setTextTitle] = useState("");
-  const [textBody, setTextBody] = useState("");
-  const [qQuestion, setQQuestion] = useState("");
-  const [qAnswer, setQAnswer] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const hasAgent = Boolean(agent);
-  const isAgentActive = hasAgent ? agent?.is_active !== false : false;
-  const statusBusy = updatingStatus;
-  const interactionsDisabled = !hasAgent || !isAgentActive || statusBusy;
-
-  useEffect(() => {
-    if (!isAgentActive) {
-      setActiveSource(null);
+    if (activeAgent?.id) {
+      listAgentVersions(activeAgent.id)
+        .then(setAgentVersions)
+        .catch((error) => {
+          console.error("Error listing agent versions:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load agent versions.",
+            variant: "destructive",
+          });
+        });
+    } else {
+      setAgentVersions([]);
     }
-  }, [isAgentActive]);
+  }, [activeAgent?.id, toast]);
 
-  useEffect(() => {
-    setRules(agent?.rules ?? "");
-    setMessage("");
-    setTextTitle("");
-    setTextBody("");
-    setQQuestion("");
-    setQAnswer("");
-    setWebsiteUrl("");
-    setSourcesState({ status: "empty", sources: [] });
-    setActiveSource(null);
-  }, [agent?.id, agent?.rules]);
+  // Determine if interactions should be disabled (e.g., agent is inactive or updating status)
+  const interactionsDisabled =
+    !activeAgent ||
+    activeAgent.is_active === false ||
+    isAgentContextLoading ||
+    isSavingDraft ||
+    isPublishing ||
+    isRollingBack;
 
-  const handleDeactivate = useCallback(async () => {
-    if (!agent?.id) return;
-    setUpdatingStatus(true);
+  if (isAgentContextLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin mb-4" />
+        <p>Loading agent...</p>
+      </div>
+    );
+  }
+
+  if (agentContextError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-destructive">
+        <p>Error loading agent: {agentContextError.message}</p>
+        <p className="text-muted-foreground text-sm">Please try again later.</p>
+      </div>
+    );
+  }
+
+  if (!activeAgent) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <p>Please select an agent to begin, or create a new one.</p>
+      </div>
+    );
+  }
+
+  // --- Handlers for Versioning Actions ---
+
+  const handleSaveDraft = async () => {
+    if (!activeAgent) return;
+    setIsSavingDraft(true);
     try {
-      await deactivateAgent(agent.id);
-      setAgentActiveState(agent.id, false);
-      toast({
-        title: "Agent disabled",
-        description: "The agent will no longer respond until re-enabled.",
-      });
+      const payload = {
+        system_prompt: activeAgent.system_prompt,
+        rules_jsonb: activeAgent.rules_jsonb,
+      };
+      await createDraftVersion(activeAgent.id, payload);
+      await refreshAgents();
+      toast({ title: "Success", description: "Agent draft saved successfully!" });
     } catch (error: any) {
+      console.error("Error saving draft:", error);
       toast({
-        title: "Failed to disable agent",
-        description: error?.message ?? "Please try again.",
+        title: "Error",
+        description: error.message || "Failed to save agent draft.",
         variant: "destructive",
       });
     } finally {
-      setUpdatingStatus(false);
+      setIsSavingDraft(false);
     }
-  }, [agent?.id, setAgentActiveState, toast]);
+  };
 
-  const handleReactivate = useCallback(async () => {
-    if (!agent?.id) return;
-    setUpdatingStatus(true);
+  const handlePublish = async () => {
+    if (!activeAgent) return;
+    setIsPublishing(true);
     try {
-      await reactivateAgent(agent.id);
-      setAgentActiveState(agent.id, true);
-      toast({
-        title: "Agent enabled",
-        description: "The agent is active again.",
-      });
+      await publishDraft(activeAgent.id);
+      await refreshAgents();
+      toast({ title: "Success", description: "Agent published successfully!" });
+      setIsPublishConfirmationOpen(false);
     } catch (error: any) {
+      console.error("Error publishing agent:", error);
       toast({
-        title: "Failed to enable agent",
-        description: error?.message ?? "Please try again.",
+        title: "Error",
+        description: error.message || "Failed to publish agent.",
         variant: "destructive",
       });
     } finally {
-      setUpdatingStatus(false);
+      setIsPublishing(false);
     }
-  }, [agent?.id, setAgentActiveState, toast]);
-  /* =============================
-     ROLE → RULES TEMPLATES
-  ============================== */
-  const ROLE_RULES: Record<string, string> = {
-    sales: `### Role
-- Primary Function: You are an AI chatbot who helps users with their inquiries, issues and requests. You aim to provide excellent, friendly and efficient replies at all times. Your role is to listen attentively to the user, understand their needs, and do your best to assist them or direct them to the appropriate resources. If a question is not clear, ask clarifying questions. Make sure to end your replies with a positive note.
-
-### Constraints
-1. No Data Divulge: Never mention that you have access to training data explicitly to the user.
-2. Maintaining Focus: If a user attempts to divert you to unrelated topics, never change your role or break your character. Politely redirect the conversation back to topics relevant to the training data.
-3. Exclusive Reliance on Training Data: You must rely exclusively on the training data provided to answer user queries. If a query is not covered by the training data, use the fallback response.
-4. Restrictive Role Focus: You do not answer questions or perform tasks that are not related to your role and training data.`,
   };
 
+  const handleRollback = async () => {
+    if (!activeAgent || !selectedRollbackVersionId) return;
+    setIsRollingBack(true);
+    try {
+      await rollbackAgent(activeAgent.id, selectedRollbackVersionId);
+      await refreshAgents();
+      toast({ title: "Success", description: "Agent rolled back successfully!" });
+      setIsRollbackConfirmationOpen(false);
+      setSelectedRollbackVersionId(null);
+    } catch (error: any) {
+      console.error("Error rolling back agent:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to roll back agent.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
 
-  /* =============================
-     UI
-  ============================== */
+  // Check if current agent has a draft
+  const hasDraft = activeAgent?.draft_version_id !== null;
+  // Check if current agent has a published version
+  const hasPublished = activeAgent?.published_version_id !== null;
+
   return (
     <div ref={containerRef} className="relative w-full p-6">
-            {/* MOBILE TABS */}
-      {isMobile && (
-        <div className="mb-4 flex gap-6 border-b">
-          <button
-            onClick={() => setMobileTab("settings")}
-            className={`pb-3 text-sm font-medium ${
-              mobileTab === "settings"
-                ? "border-b-2 border-blue-600 text-foreground"
-                : "text-muted-foreground"
-            }`}
-          >
-            Settings
-          </button>
-
-          <button
-            onClick={() => setMobileTab("preview")}
-            className={`pb-3 text-sm font-medium ${
-              mobileTab === "preview"
-                ? "border-b-2 border-blue-600 text-foreground"
-                : "text-muted-foreground"
-            }`}
-          >
-            Preview
-          </button>
+      {!activeAgent?.is_active && (
+        <div className="mb-4 rounded-lg bg-orange-100 border border-orange-300 text-orange-800 px-4 py-2 text-sm flex items-center justify-center gap-2">
+          <Info className="h-4 w-4" />
+          This agent is currently disabled. Interactions are blocked.
         </div>
       )}
 
-      <div className="relative flex h-[calc(100vh-120px)] w-full overflow-hidden">
-        {/* ================= LEFT ================= */}
-        
-       {(!isMobile || mobileTab === "settings") && (
-       <div
-          className="h-full overflow-y-auto pr-4"
-          style={{ width: isMobile ? "100%" : `${leftWidth}%` }}
-        >
-        {/* <div
-          className="h-full overflow-y-auto pr-4"
-          style={{ width: `${leftWidth}%` }}
-        > */} 
-          <div className="space-y-6">
-            <Card className="p-5 space-y-4">
-                            <div className="flex items-start justify-between gap-4">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold leading-tight">Agent Settings</h2>
-                  {hasAgent && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1 font-medium text-emerald-600">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        Trained
-                      </span>
-                      <span className="opacity-70">Last trained {formatRelativeTime(agent?.updated_at)}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {isAgentActive ? "Active" : "Disabled"}
-                    </span>
-
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isAgentActive}
-                      aria-label={isAgentActive ? "Disable agent" : "Enable agent"}
-                      onClick={isAgentActive ? handleDeactivate : handleReactivate}
-                      disabled={!hasAgent || statusBusy}
-                      title={isAgentActive ? "Turning off will stop responses" : "Turn on to allow responses"}
-                      className={[
-                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                        isAgentActive ? "bg-blue-600" : "bg-muted",
-                        (!hasAgent || statusBusy) ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
-                        "focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2",
-                      ].join(" ")}
-                    >
-                      <span
-                        className={[
-                          "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
-                          isAgentActive ? "translate-x-5" : "translate-x-1",
-                        ].join(" ")}
-                      />
-                    </button>
-
-                    {updatingStatus && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                  </div>
-                </div>
-              </div>
-
-<div>
-                <label className="text-xs text-muted-foreground">Role</label>
-                <Select
-                  onValueChange={(value) => {
-                    if (value === "custom") {
-                      setRules("");
-                    } else {
-                      setRules(ROLE_RULES[value] || "");
-                    }
-                  }}
-                >
-
-                  <SelectTrigger className="mt-1" disabled={interactionsDisabled}>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="support">Customer Support</SelectItem>
-                    <SelectItem value="sales">Sales Agent</SelectItem>
-                    <SelectItem value="orders">Order Assistant</SelectItem>
-                    <SelectItem value="lead_qualifier">Lead Qualifier</SelectItem>
-                    <SelectItem value="catalog_guide">Catalog Guide</SelectItem>
-                    <SelectItem value="custom">Custom Prompt</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-
-           {/* ---------------- */}
-           {/* put tone div here */}
-           {/* ---------------------- */}
-
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Rules / Instructions
-                </label>
-                <Textarea
-
-                  value={rules}
-                  onChange={(e) => setRules(e.target.value)}
-                  className="mt-1 min-h-[120px] bg-muted/40 transition-shadow focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]"
-                  placeholder="Tell the agent how to behave..."
-                  disabled={interactionsDisabled}
-                />
-
-                {/* <Textarea
-                  className="mt-1 min-h-[120px] bg-muted/40 transition-shadow focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]"
-                  placeholder="Tell the agent how to behave..."
-                /> */}
-              </div>
-            </Card>
-
-            <Card className="p-5 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-lg">Knowledge Sources</h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="gap-2 text-muted-foreground hover:text-foreground"
-                  disabled={interactionsDisabled}
-                  onClick={() => {
-                    if (interactionsDisabled) return;
-                    setActiveSource("files");
-                  }}
-                  title="Open sources"
-                >
-                  <Info className="h-4 w-4" />
-                  Manage
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <SourceCard
-                  icon={FileText}
-                  title="Files"
-                  desc="PDF, DOCX, TXT"
-                  onClick={() => {
-                    if (interactionsDisabled) return;
-                    setActiveSource("files");
-                  }}
-                  disabled={interactionsDisabled}
-                />
-                <SourceCard
-                  icon={Globe}
-                  title="Website"
-                  desc="Crawl pages"
-                  onClick={() => {
-                    if (interactionsDisabled) return;
-                    setActiveSource("website");
-                  }}
-                  disabled={interactionsDisabled}
-                />
-                <SourceCard
-                  icon={Database}
-                  title="Text"
-                  desc="Paste content"
-                  onClick={() => {
-                    if (interactionsDisabled) return;
-                    setActiveSource("text");
-                  }}
-                  disabled={interactionsDisabled}
-                />
-                <SourceCard
-                  icon={HelpCircle}
-                  title="Q&A"
-                  desc="Questions & answers"
-                  onClick={() => {
-                    if (interactionsDisabled) return;
-                    setActiveSource("qna");
-                  }}
-                  disabled={interactionsDisabled}
-                />
-              </div>
-
-              {/* STORAGE STATUS BAR */}
-              <div className="mt-2 rounded-xl border p-4 bg-muted/40">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">Knowledge usage</span>
-                  <span className="font-semibold">
-                    {formatKB(usedKB)} / {formatKB(totals.limitKB)}
-                  </span>
-                </div>
-
-                <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 transition-all duration-500"
-                    style={{ width: `${usagePct}%` }}
-                  />
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                  <span>📄 Files: {formatKB(totals.filesKB)}</span>
-                  <span>🌐 Website: {formatKB(totals.websiteKB)}</span>
-                  <span>📝 Text: {formatKB(totals.textKB)}</span>
-                  <span>❓ Q&amp;A: {formatKB(totals.qnaKB)}</span>
-                </div>
-              </div>
-            </Card>
-          </div>
+      {/* Agent Versioning Controls */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-2">
+          <h1 className="text-2xl font-bold text-foreground">{activeAgent?.name}</h1>
+          {hasDraft && <Badge variant="outline">Draft</Badge>}
+          {hasPublished && (
+            <Badge className="bg-green-500 hover:bg-green-500 text-white">
+              Published (v{agentVersions.find(v => v.id === activeAgent?.published_version_id)?.version_number || 'N/A'})
+            </Badge>
+          )}
         </div>
-        )}
-
-
-        {/* ============ SLIDER HANDLE ============ */}
-        {!isMobile && (
-    
-
-        <div
-          onMouseDown={() => setIsDragging(true)}
-          className={[
-            "relative h-full w-[10px] shrink-0 cursor-col-resize",
-            "flex items-center justify-center",
-          ].join(" ")}
-          aria-label="Resize panels"
-          title="Drag to resize"
-        >
-          {/* subtle visible handle */}
-          <div className="h-full w-[2px] rounded-full bg-border" />
-          {/* larger hover area */}
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[10px] hover:bg-primary/5 transition" />
-        </div>
-        )}
-
-        {/* ================= RIGHT ================= */}
-        {/* ================= RIGHT ================= */}
-        {(!isMobile || mobileTab === "preview") && (
-        <div
-          className="h-full pl-4"
-          style={{ width: isMobile ? "100%" : `${100 - leftWidth}%` }}
-        >
-
-        {/* <div className="h-full pl-4" style={{ width: `${100 - leftWidth}%` }}> */}
-          <Card className="h-full flex flex-col rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white">
-              <span className="text-sm font-semibold">Agent Playground</span>
-              <button
-                type="button"
-                className="rounded-full p-2 hover:bg-white/10 transition"
-                title="Reset"
-                disabled={interactionsDisabled}
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={interactionsDisabled || isSavingDraft}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {isSavingDraft ? "Saving Draft..." : "Save Draft"}
+          </Button>
+          <Button
+            variant="default"
+            onClick={() => setIsPublishConfirmationOpen(true)}
+            disabled={interactionsDisabled || isPublishing || !hasDraft}
+          >
+            <UploadCloud className="mr-2 h-4 w-4" />
+            {isPublishing ? "Publishing..." : "Publish"}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={interactionsDisabled || isRollingBack || agentVersions.length <= 1}
               >
-                <RotateCcw className="h-4 w-4 hover:rotate-180 transition" />
-              </button>
-            </div>
-
-            {/* dotted background like Chatbase */}
-            <div className="flex-1 p-4 space-y-3 bg-[radial-gradient(#d4d4d4_1px,transparent_1px)] [background-size:16px_16px]">
-              <div className="bg-[#E0DED9] rounded-2xl px-4 py-3 max-w-[75%] animate-in fade-in slide-in-from-bottom-2">
-                <p className="text-sm">Hi! How can I help you today?</p>
-              </div>
-            </div>
-
-            <div className="p-3 bg-white">
-              <div className="flex items-center gap-2 rounded-full border px-3 py-2 focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.15)] transition-shadow">
-                <Input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Message..."
-                  className="border-0 focus-visible:ring-0"
-                  disabled={interactionsDisabled}
-                />
-                <button
-                  type="button"
-                  className="rounded-full p-2 hover:bg-muted transition"
-                  title="Emoji"
+                <History className="mr-2 h-4 w-4" />
+                Rollback
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {agentVersions.filter(v => v.id !== activeAgent?.published_version_id).map((version) => (
+                <DropdownMenuItem
+                  key={version.id}
+                  onSelect={() => {
+                    setSelectedRollbackVersionId(version.id);
+                    setIsRollbackConfirmationOpen(true);
+                  }}
                   disabled={interactionsDisabled}
                 >
-                  <Smile className="h-5 w-5 text-muted-foreground" />
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full p-2 hover:bg-muted transition"
-                  title="Send"
-                  disabled={interactionsDisabled}
-                >
-                  <Send className="h-5 w-5 hover:scale-110 transition" />
-                </button>
-              </div>
-            </div>
-          </Card>
+                  Version {version.version_number} (
+                  {new Date(version.created_at).toLocaleString()})
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        )}
       </div>
 
-      {/* =============================
-          POPUP WINDOWS (MODALS)
-          (kept same UI as your images)
-      ============================== */}
-      
-      {activeSource === "files" && (
-        <ModalShell
-          title="Files"
-          subtitle="Upload documents to train your AI. Extract text from PDFs, DOCX, and TXT files."
-          onClose={() => setActiveSource(null)}
-        >
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
+        </TabsList>
+        <TabsContent value="settings" className="flex-1 overflow-y-auto pt-4">
           <div className="space-y-4">
-            <div className="rounded-xl border bg-muted/30 p-3 text-sm flex items-start gap-2">
-              <Info className="h-4 w-4 mt-0.5 text-muted-foreground" />
-              <span>
-                If you upload a PDF, make sure the text is selectable (not a scanned
-                image).
+            {" "}
+            {/* Added space-y-4 for consistent spacing */}
+            <AgentSettings activeAgent={activeAgent} interactionsDisabled={interactionsDisabled} />
+            <AgentKnowledge agentId={activeAgent.id} interactionsDisabled={interactionsDisabled} />
+          </div>
+        </TabsContent>
+        <TabsContent value="preview" className="flex-1 pt-4">
+          {" "}
+          {/* Removed overflow-y-auto as Playground handles its own scroll */}
+          <AgentPlayground agentId={activeAgent.id} mode="preview" interactionsDisabled={interactionsDisabled} />
+        </TabsContent>
+      </Tabs>
+
+      {/* Publish Confirmation Dialog */}
+      <AlertDialog open={isPublishConfirmationOpen} onOpenChange={setIsPublishConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Publish</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will make the current draft version live for all channels. This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPublishing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePublish} disabled={isPublishing}>
+              {isPublishing ? "Publishing..." : "Publish"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rollback Confirmation Dialog */}
+      <AlertDialog open={isRollbackConfirmationOpen} onOpenChange={setIsRollbackConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Rollback</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revert the live agent to{" "}
+              <span className="font-semibold">
+                Version{" "}
+                {
+                  agentVersions.find((v) => v.id === selectedRollbackVersionId)
+                    ?.version_number
+                }
+              </span>{" "}
+              published on{" "}
+              <span className="font-semibold">
+                {new Date(
+                  agentVersions.find((v) => v.id === selectedRollbackVersionId)?.created_at || ""
+                ).toLocaleString()}
               </span>
-            </div>
-
-              <div className="rounded-2xl border border-dashed p-8 text-center bg-white">
-                <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
-                <p className="mt-3 font-medium">
-                  Drag &amp; drop files here, or click to select
-                </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Supported: pdf, doc, docx, txt
-              </p>
-
-              <div className="mt-4">
-                <Button variant="outline" disabled={interactionsDisabled}>
-                  Select files
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl border p-4 bg-muted/30">
-              <div className="text-sm">
-                <p className="font-medium">Sources</p>
-                <p className="text-muted-foreground text-xs">
-                  {sourcesLoading
-                    ? "Loading sources..."
-                    : sourcesState.status === "empty"
-                      ? "No file sources yet."
-                      : `${sourceCounts.files} file source${sourceCounts.files === 1 ? "" : "s"} available`}
-                </p>
-              </div>
-              <Button className="px-6" disabled>
-                Retrain agent
-              </Button>
-            </div>
-          </div>
-        </ModalShell>
-      )}
-
-      {activeSource === "website" && (
-        <ModalShell
-          title="Website"
-          subtitle="Crawl web pages or submit sitemaps to update your AI with the latest content."
-          onClose={() => setActiveSource(null)}
-        >
-          <div className="space-y-4">
-            <div className="rounded-xl border p-4 bg-muted/30">
-              <p className="font-medium text-sm">Add links</p>
-
-              <div className="mt-3 grid gap-2">
-                <label className="text-xs text-muted-foreground">URL</label>
-                <Input
-                  value={websiteUrl}
-                  onChange={(e) => setWebsiteUrl(e.target.value)}
-                  placeholder="https://www.example.com"
-                  disabled={interactionsDisabled}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Links found during crawling may update if new links are discovered.
-                </p>
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <Button disabled={interactionsDisabled}>Fetch links</Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl border p-4 bg-muted/30">
-              <div className="text-sm">
-                <p className="font-medium">Sources</p>
-                <p className="text-muted-foreground text-xs">
-                  {sourcesLoading
-                    ? "Loading sources..."
-                    : sourcesState.status === "empty"
-                      ? "No website sources yet."
-                      : `${sourceCounts.website} website source${sourceCounts.website === 1 ? "" : "s"} available`}
-                </p>
-              </div>
-              <Button className="px-6" disabled>
-                Retrain agent
-              </Button>
-            </div>
-          </div>
-        </ModalShell>
-      )}
-
-      {activeSource === "text" && (
-        <ModalShell
-          title="Text"
-          subtitle="Add plain text sources to train your AI Agent with precise information."
-          onClose={() => setActiveSource(null)}
-        >
-          <div className="space-y-4">
-            <div className="grid gap-2">
-              <label className="text-xs text-muted-foreground">Title</label>
-              <Input
-                value={textTitle}
-                onChange={(e) => setTextTitle(e.target.value)}
-                placeholder="Ex: Refund requests"
-                disabled={interactionsDisabled}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <label className="text-xs text-muted-foreground">Text</label>
-              <Textarea
-                value={textBody}
-                onChange={(e) => setTextBody(e.target.value)}
-                placeholder="Paste your text here..."
-                className="min-h-[160px]"
-                disabled={interactionsDisabled}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl border p-4 bg-muted/30">
-              <div className="text-sm">
-                <p className="font-medium">Sources</p>
-                <p className="text-muted-foreground text-xs">
-                  {sourcesLoading
-                    ? "Loading sources..."
-                    : sourcesState.status === "empty"
-                      ? "No text sources yet."
-                      : `Text sources size: ${formatKB(totals.textKB)} / ${formatKB(totals.limitKB)}`}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setTextBody("")} disabled={interactionsDisabled}>
-                  Clear
-                </Button>
-                <Button disabled>Add text</Button>
-              </div>
-            </div>
-          </div>
-        </ModalShell>
-      )}
-
-      {activeSource === "qna" && (
-        <ModalShell
-          title="Q&A"
-          subtitle="Add curated question/answer pairs for high-precision responses."
-          onClose={() => setActiveSource(null)}
-        >
-          <div className="space-y-4">
-            <div className="grid gap-2">
-              <label className="text-xs text-muted-foreground">Question</label>
-              <Input
-                value={qQuestion}
-                onChange={(e) => setQQuestion(e.target.value)}
-                placeholder="Ex: What is your return policy?"
-                disabled={interactionsDisabled}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <label className="text-xs text-muted-foreground">Answer</label>
-              <Textarea
-                value={qAnswer}
-                onChange={(e) => setQAnswer(e.target.value)}
-                placeholder="Ex: You can return any item within 14 days..."
-                className="min-h-[140px]"
-                disabled={interactionsDisabled}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl border p-4 bg-muted/30">
-              <div className="text-sm">
-                <p className="font-medium">Sources</p>
-                <p className="text-muted-foreground text-xs">
-                  {sourcesLoading
-                    ? "Loading sources..."
-                    : sourcesState.status === "empty"
-                      ? "No Q&A sources yet."
-                      : `Q&A sources: ${sourceCounts.qna}`}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setQQuestion("");
-                    setQAnswer("");
-                  }}
-                  disabled={interactionsDisabled}
-                >
-                  Clear
-                </Button>
-                <Button disabled>Add Q&amp;A</Button>
-              </div>
-            </div>
-          </div>
-        </ModalShell>
-      )}
+              . Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRollingBack}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRollback} disabled={isRollingBack}>
+              {isRollingBack ? "Rolling Back..." : "Rollback"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-
-
-    //  <label className="text-xs text-muted-foreground">Tone</label>
-    //             <Select>
-    //               <SelectTrigger className="mt-1">
-    //                 <SelectValue placeholder="Select tone" />
-    //               </SelectTrigger>
-    //               <SelectContent>
-    //                 <SelectItem value="friendly">Friendly</SelectItem>
-    //                 <SelectItem value="professional">Professional</SelectItem>
-    //                 {/* <SelectItem value="formal">Formal</SelectItem> */}
-    //                 <SelectItem value="casual">Casual</SelectItem>
-    //                 {/* <SelectItem value="empathetic">Empathetic</SelectItem> */}
-    //               </SelectContent>
-    //             </Select>
-               

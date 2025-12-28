@@ -9,6 +9,7 @@ from channels.router import ChannelRouter
 from channels.sender import ChannelSender
 from agents.runtime import AgentRuntime  # Import the AgentRuntime from Stage 2
 
+from backend.automations.engine import engine as automations_engine # Import the automations engine
 
 import logging
 from core.errors import AIAProviderError, SupabaseUnavailableError
@@ -98,6 +99,25 @@ class ChannelEventHandler:
             )
             if conversation_id:
                 self.repo.update_conversation_status(conversation_id, "needs_human")
+                # --- AUTOMATIONS ENGINE INTEGRATION ---
+                try:
+                    automations_engine.trigger(
+                        event_name="conversation_handoff",
+                        workspace_id=self.workspace_id,
+                        payload={
+                            "id": str(conversation_id), # Unique ID for idempotency
+                            "conversation_id": str(conversation_id),
+                            "reason": "AI processing error or handoff required",
+                            "message_id": str(message_id)
+                        }
+                    )
+                except Exception as trigger_e:
+                    logger.error(
+                        "Error triggering automations engine for conversation_handoff",
+                        extra={"conversation_id": conversation_id, "error": str(trigger_e)},
+                        exc_info=True,
+                    )
+                # --- END AUTOMATIONS ENGINE INTEGRATION ---
             raise e
         except Exception as e:
             logger.critical(
@@ -107,28 +127,68 @@ class ChannelEventHandler:
             )
             if conversation_id:
                 self.repo.update_conversation_status(conversation_id, "needs_human")
+                # --- AUTOMATIONS ENGINE INTEGRATION ---
+                try:
+                    automations_engine.trigger(
+                        event_name="conversation_handoff",
+                        workspace_id=self.workspace_id,
+                        payload={
+                            "id": str(conversation_id), # Unique ID for idempotency
+                            "conversation_id": str(conversation_id),
+                            "reason": "Unexpected error requiring handoff",
+                            "message_id": str(message_id)
+                        }
+                    )
+                except Exception as trigger_e:
+                    logger.error(
+                        "Error triggering automations engine for conversation_handoff (unexpected)",
+                        extra={"conversation_id": conversation_id, "error": str(trigger_e)},
+                        exc_info=True,
+                    )
+                # --- END AUTOMATIONS ENGINE INTEGRATION ---
             raise exceptions.APIException("An unexpected error occurred while handling the message.")
 
 
     def handle_outbound_reply(self, reply_data: Dict[str, Any]):
         """
         Handles an outbound reply from a human (e.g., from Inbox UI).
+        This will persist the message and dispatch it to the external channel.
         """
         conversation_id = uuid.UUID(reply_data["conversation_id"])
+        sender_type = reply_data["sender_type"] # 'human' or 'agent'
+        content = reply_data["content"]
+
         logger.info(
             "Handling outbound reply",
             extra={
                 "workspace_id": self.workspace_id,
                 "conversation_id": conversation_id,
                 "channel": reply_data["channel"],
+                "sender_type": sender_type,
             },
         )
         try:
-            agent_id = uuid.UUID(reply_data["agent_id"])
-            channel = reply_data["channel"]
-            external_user_id = reply_data["external_user_id"]
-            content = reply_data["content"]
+            # 1. Fetch conversation details to get agent_id, external_user_id, etc.
+            conversation = self.repo.get_conversation(conversation_id)
+            if not conversation:
+                raise exceptions.NotFound(f"Conversation {conversation_id} not found.")
 
+            agent_id = uuid.UUID(conversation["agent_id"])
+            channel = conversation["channel"]
+            external_user_id = conversation["external_user_id"]
+            
+            # Map sender_type to message role for persistence
+            message_role = "user" if sender_type == "human" else "assistant" # Assuming human replies are 'user' and AI replies are 'assistant'
+
+            # 2. Persist message to public.chat_messages
+            message_id = self.repo.insert_chat_message(
+                session_id=conversation_id,
+                role=message_role,
+                content=content
+            )
+            logger.info(f"Outbound message {message_id} persisted for conversation {conversation_id}.")
+
+            # 3. Dispatch message to external provider
             self.sender.send_message(
                 workspace_id=self.workspace_id,
                 agent_id=agent_id,
@@ -136,10 +196,15 @@ class ChannelEventHandler:
                 external_user_id=external_user_id,
                 content=content
             )
-            self.repo.update_conversation_status(conversation_id, "human_active")
-        except SupabaseUnavailableError as e:
+            logger.info(f"Outbound message dispatched to {channel} for conversation {conversation_id}.")
+
+            # 4. Update conversation status (e.g., to 'human_active' or just update last_message_at)
+            # For now, let's update last_message_at and summary
+            self.repo.update_conversation_last_message_info(conversation_id, content)
+
+        except (SupabaseUnavailableError, exceptions.NotFound) as e:
             logger.error(
-                "Error during outbound reply",
+                "Error during outbound reply persistence or dispatch",
                 extra={"conversation_id": conversation_id, "error": str(e)},
                 exc_info=True,
             )
@@ -151,4 +216,3 @@ class ChannelEventHandler:
                 exc_info=True,
             )
             raise exceptions.APIException("An unexpected error occurred while sending the reply.")
-

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspace } from '@/hooks/useWorkspace';
+import { useWorkspace } from '@/hooks';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MessageSquare, ShoppingCart, DollarSign, Sparkles } from 'lucide-react';

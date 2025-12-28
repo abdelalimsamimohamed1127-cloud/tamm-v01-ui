@@ -10,6 +10,7 @@ class AnalyticsQuerySerializer(serializers.Serializer):
     end_date = serializers.DateField(required=False, default=datetime.date.today())
     agent_id = serializers.UUIDField(required=False)
     channel = serializers.CharField(max_length=100, required=False)
+    insight_type = serializers.CharField(max_length=100, required=False)
 
     def validate(self, data):
         if data['start_date'] > data['end_date']:
@@ -18,10 +19,22 @@ class AnalyticsQuerySerializer(serializers.Serializer):
 
 class InsightsQuestionSerializer(serializers.Serializer):
     """
-    Serializer for the Insights Engine POST request body.
+    Serializer for the Insights Engine POST request body, for AI-powered questions.
     """
-    question = serializers.CharField(max_length=500)
+    question = serializers.CharField(max_length=500, required=False) # Make optional for structured insights
     context = serializers.JSONField(required=False, default=dict)
+
+class StructuredInsightRequestSerializer(serializers.Serializer):
+    """
+    Serializer for triggering structured insight generation.
+    """
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+
+    def validate(self, data):
+        if data['period_start'] > data['period_end']:
+            raise serializers.ValidationError("period_start cannot be after period_end.")
+        return data
 
 class InsightStorageSerializer(serializers.Serializer):
     """
@@ -29,6 +42,10 @@ class InsightStorageSerializer(serializers.Serializer):
     """
     id = serializers.UUIDField(read_only=True)
     workspace_id = serializers.UUIDField()
-    agent_id = serializers.UUIDField(required=False, allow_null=True)
-    summary_text = serializers.CharField()
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    insight_type = serializers.CharField(max_length=100)
+    title = serializers.CharField(max_length=255)
+    summary = serializers.CharField()
+    payload = serializers.JSONField()
     created_at = serializers.DateTimeField(read_only=True)

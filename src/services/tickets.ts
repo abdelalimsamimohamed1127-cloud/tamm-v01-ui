@@ -1,4 +1,10 @@
-import { supabase } from '@/integrations/supabase/client'
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client'
+
+function ensureSupabase() {
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error("Supabase not configured");
+  }
+}
 
 export type Ticket = {
   id: string
@@ -13,6 +19,7 @@ export type Ticket = {
 }
 
 export async function getTickets(workspaceId: string): Promise<Ticket[]> {
+  ensureSupabase();
   const { data, error } = await supabase
     .from('tickets')
     .select('*')
@@ -27,6 +34,7 @@ export async function getTickets(workspaceId: string): Promise<Ticket[]> {
 }
 
 export async function createTicket(data: Omit<Ticket, 'id' | 'created_at' | 'updated_at'>): Promise<Ticket> {
+  ensureSupabase();
   const { data: inserted, error } = await supabase.from('tickets').insert(data).select('*').single()
 
   if (error) {
@@ -37,6 +45,7 @@ export async function createTicket(data: Omit<Ticket, 'id' | 'created_at' | 'upd
 }
 
 export async function updateTicketStatus(id: string, status: Ticket['status']): Promise<void> {
+  ensureSupabase();
   const { error } = await supabase
     .from('tickets')
     .update({ status })

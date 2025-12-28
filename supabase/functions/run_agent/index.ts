@@ -8,6 +8,7 @@ type RunAgentRequest = {
   message?: string;
   session_id?: string;
   agent_id?: string;
+  mode?: string; // ADDED
 };
 
 const encoder = new TextEncoder();
@@ -29,21 +30,45 @@ function formatContext(
   return `Context:\n${lines.join("\n")}`;
 }
 
+// Helper to generate a simple UUID for internal tracing if X-Request-ID is missing
+function generateUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Structured logger
+function logEvent(event: string, details: Record<string, any>, requestId: string, level: 'info' | 'warn' | 'error' = 'info') {
+  const logObject = {
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    request_id: requestId,
+    ...details,
+  };
+  console.log(JSON.stringify(logObject));
+}
+
+const RECENT_REQUESTS = new Map();
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const requestId = req.headers.get("X-Request-ID") || generateUuid();
+  logEvent("request_start", { method: req.method, url: req.url }, requestId);
 
   try {
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
     if (!openaiKey || !supabaseUrl || !serviceKey) {
-      return new Response(JSON.stringify({ error: "Missing environment variables" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new Error("Missing critical environment variables");
     }
 
-    const { message, session_id, agent_id } = await req.json() as RunAgentRequest;
+    const { message, session_id, agent_id, mode } = await req.json() as RunAgentRequest;
     if (!message || !session_id || !agent_id) {
       return new Response(JSON.stringify({ error: "message, session_id, and agent_id are required" }), {
         status: 400,
@@ -51,68 +76,128 @@ serve(async (req) => {
       });
     }
 
+    // Idempotency Check
+    const requestHash = `${session_id}:${await crypto.subtle.digest('SHA-1', encoder.encode(message))}`;
+    if (RECENT_REQUESTS.has(requestHash)) {
+      logEvent("duplicate_request", { requestHash }, requestId, 'warn');
+      return new Response(JSON.stringify({ error: "Duplicate request" }), { status: 429, headers: corsHeaders });
+    }
+    RECENT_REQUESTS.set(requestHash, Date.now());
+    setTimeout(() => RECENT_REQUESTS.delete(requestHash), 2000); // Clear after 2s
+
     const supabase = createClient(supabaseUrl, serviceKey);
     const openai = new OpenAI({ apiKey: openaiKey });
 
-    const { data: agent, error: agentError } = await supabase
-      .from("agents")
-      .select("id, workspace_id")
-      .eq("id", agent_id)
-      .maybeSingle();
-    if (agentError || !agent) {
-      return new Response(JSON.stringify({ error: "Agent not found" }), {
+    // --- 1. Resolve Agent and Verify Webchat Channel ---
+    const { data: channelData, error: channelError } = await supabase
+      .from("agent_channels")
+      .select("workspace_id, agent_id, status, config")
+      .eq("agent_id", agent_id)
+      .eq("platform", "webchat")
+      .limit(1)
+      .single();
+
+    if (channelError || !channelData) {
+      const errorMessage = `Webchat channel not found for agent: ${agent_id}`;
+      logEvent("auth_error", { message: errorMessage, agent_id }, requestId, 'error');
+      return new Response(JSON.stringify({ error: "Agent not found or webchat disabled" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { data: session, error: sessionError } = await supabase
-      .from("chat_sessions")
-      .select("id, workspace_id, agent_id")
-      .eq("id", session_id)
-      .maybeSingle();
-    if (sessionError || !session) {
-      return new Response(JSON.stringify({ error: "Session not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (session.agent_id !== agent.id || session.workspace_id !== agent.workspace_id) {
-      return new Response(JSON.stringify({ error: "Session/agent mismatch" }), {
+    const isChannelActive = channelData.config?.is_active === true && channelData.status !== 'disconnected';
+    if (!isChannelActive) {
+      const errorMessage = `Webchat is not active for agent: ${agent_id}`;
+      logEvent("auth_error", { message: errorMessage, agent_id }, requestId, 'warn');
+      return new Response(JSON.stringify({ error: "This chat is currently unavailable" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    
+    const { workspace_id: workspaceId } = channelData;
 
-    const workspaceId = agent.workspace_id;
+    // --- 2. Find or Create Session ---
+    let { data: session, error: sessionError } = await supabase
+      .from("chat_sessions")
+      .select("id")
+      .eq("id", session_id)
+      .maybeSingle();
+
+    if (sessionError) {
+       throw new Error(`Session lookup error: ${sessionError.message}`);
+    }
+
+    if (!session) {
+      const { data: newSession, error: newSessionError } = await supabase
+        .from("chat_sessions")
+        .insert({ id: session_id, agent_id, workspace_id: workspaceId })
+        .select("id")
+        .single();
+      if (newSessionError) {
+        throw new Error(`Session creation error: ${newSessionError.message}`);
+      }
+      session = newSession;
+      logEvent("session_created", { session_id, agent_id, workspaceId }, requestId);
+    }
+    
+    // --- (The rest of the logic from the original file follows) ---
+    // This includes fetching agent config, history, context, calling OpenAI, etc.
+    // We proceed with the knowledge that workspaceId and agent_id are now verified.
+
+    const { data: agentData, error: agentFetchError } = await supabase
+      .from("agents")
+      .select("draft_version_id, published_version_id, config")
+      .eq("id", agent_id)
+      .single();
+
+    if (agentFetchError) throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
+    
+    const currentMode = mode || "live";
+    let agentConfig: Record<string, any> = {};
+    const versionIdToUse = agentData[`${currentMode}_version_id`];
+
+    if (versionIdToUse) {
+        const { data: versionData, error: versionError } = await supabase
+            .from("agent_versions")
+            .select("config_jsonb")
+            .eq("id", versionIdToUse)
+            .single();
+        if (versionError) {
+             logEvent("runtime_warning", { message: `Could not fetch agent version config: ${versionError.message}`}, requestId, 'warn');
+        } else if (versionData) {
+            agentConfig = versionData.config_jsonb || {};
+        }
+    }
+    if (Object.keys(agentConfig).length === 0) {
+        agentConfig = agentData.config || {};
+    }
+    
+    const systemPrompt = agentConfig.system_prompt || "You are a helpful AI assistant.";
+    const historySize = agentConfig.history_size || 5;
 
     const { data: balanceData, error: balanceError } = await supabase.rpc(
       "get_wallet_balance",
-      { workspace_id: workspaceId },
+      { p_workspace_id: workspaceId },
     );
-    if (balanceError) {
-      return new Response(JSON.stringify({ error: "Unable to check balance" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const balance = typeof balanceData === "number" ? balanceData : balanceData?.balance ?? 0;
-    if (balance <= 0) {
-      return new Response(JSON.stringify({ error: "Insufficient credits" }), {
-        status: 402,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (balanceError || (typeof balanceData === "number" ? balanceData : balanceData?.balance ?? 0) <= 0) {
+      const err = "Insufficient credits";
+      logEvent("insufficient_credits", { workspaceId, agent_id, balance: balanceData }, requestId, 'warn');
+      return new Response(JSON.stringify({ error: err }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" }});
     }
 
+    logEvent("agent_invocation_params", { message_length: message.length, session_id, agent_id, workspaceId, mode: currentMode }, requestId);
+
     const { data: historyRows, error: historyError } = await supabase
-      .from("chat_messages")
-      .select("role, content, created_at")
+      .from("agent_chat_messages")
+      .select("role, content")
       .eq("session_id", session_id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-    const history = (historyError ? [] : (historyRows ?? [])).reverse().map((row) => ({
-      role: row.role as "user" | "assistant" | "system",
+      .order("created_at", { ascending: true })
+      .limit(historySize);
+
+    const history = (historyError ? [] : (historyRows ?? [])).map((row) => ({
+      role: row.role as "user" | "assistant",
       content: row.content ?? "",
     }));
 
@@ -125,7 +210,7 @@ serve(async (req) => {
     const { data: matchRows, error: matchError } = await supabase.rpc("match_site_pages", {
       query_embedding: embedding,
       match_count: 5,
-      workspace_id: workspaceId,
+      p_workspace_id: workspaceId,
     });
 
     const filteredMatches = (matchError ? [] : (matchRows ?? []))
@@ -133,11 +218,10 @@ serve(async (req) => {
       .slice(0, 5);
     const context = formatContext(filteredMatches);
 
+    const fullSystemPrompt = `${systemPrompt}\n\nUse this context: ${context}. If unsure, say "I don't know".`;
+
     const messages = [
-      {
-        role: "system",
-        content: `You are a helpful assistant. Use this context: ${context}. If unsure, say "I don't know".`,
-      },
+      { role: "system", content: fullSystemPrompt },
       ...history,
       { role: "user", content: message },
     ] as { role: "user" | "assistant" | "system"; content: string }[];
@@ -148,9 +232,7 @@ serve(async (req) => {
       messages,
     });
 
-    const inputTokens = roughTokens(
-      messages.map((m) => `${m.role}: ${m.content ?? ""}`).join("\n"),
-    );
+    const inputTokens = roughTokens(messages.map((m) => `${m.role}: ${m.content ?? ""}`).join("\n"));
     let outputTokens = 0;
     let fullText = "";
 
@@ -167,105 +249,30 @@ serve(async (req) => {
           }
           controller.close();
 
-          const { error: messageError } = await supabase.from("chat_messages").insert([
-            {
-              session_id,
-              role: "user",
-              content: message,
-              token_count: roughTokens(message),
-            },
-            {
-              session_id,
-              role: "assistant",
-              content: fullText,
-              token_count: outputTokens,
-            },
+          logEvent("model_response_received", { inputTokens, outputTokens, fullTextLength: fullText.length, session_id, agent_id, workspaceId }, requestId);
+
+          const { error: messageError } = await supabase.from("agent_chat_messages").insert([
+            { session_id, role: "user", content: message, token_count: roughTokens(message), agent_id, workspace_id },
+            { session_id, role: "assistant", content: fullText, token_count: outputTokens, agent_id, workspace_id },
           ]);
           if (messageError) throw messageError;
-
-          outputTokens = Math.max(outputTokens, roughTokens(fullText));
-
+          
           const costUsd = (inputTokens * 0.00000015) + (outputTokens * 0.0000006);
+          await supabase.from("usage_events").insert({ workspace_id: workspaceId, agent_id, event_type: "model_inference", model: "gpt-4o-mini", input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: costUsd });
+          await supabase.rpc("deduct_credits", { p_workspace_id: workspaceId, amount: costUsd });
 
-          await supabase.from("usage_events").insert({
-            workspace_id: workspaceId,
-            agent_id,
-            event_type: "model_inference",
-            model: "gpt-4o-mini",
-            input_tokens: inputTokens,
-            output_tokens: outputTokens,
-            cost_usd: costUsd,
-          }).catch(() => {});
-
-          await supabase.rpc("deduct_credits", {
-            workspace_id: workspaceId,
-            amount: costUsd,
-          }).catch(() => {});
-
-          const runClassification = async () => {
-            try {
-              const result = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                stream: false,
-                messages: [
-                  {
-                    role: "system",
-                    content:
-                      "Analyze the last user message and the assistant reply.\nReturn ONLY valid JSON in this format:\n\n{\n  sentiment: 'positive' | 'neutral' | 'negative',\n  topic: string (max 3 words),\n  urgency: 'low' | 'medium' | 'high'\n}",
-                  },
-                  { role: "user", content: message },
-                  { role: "assistant", content: fullText },
-                ],
-              });
-
-              const raw = result.choices?.[0]?.message?.content ?? "";
-              if (!raw) return;
-
-              const parsed = JSON.parse(raw) as {
-                sentiment?: string;
-                topic?: string;
-                urgency?: string;
-              };
-
-              const payload: Record<string, string | undefined> = {
-                sentiment: parsed.sentiment,
-                topic: parsed.topic,
-                urgency: parsed.urgency,
-              };
-
-              await supabase
-                .from("chat_sessions")
-                .update(payload)
-                .eq("id", session_id)
-                .throwOnError();
-            } catch (_) {
-              // Silently ignore enrichment failures
-            }
-          };
-
-          const runtime = (globalThis as any)?.EdgeRuntime;
-          if (runtime?.waitUntil) {
-            runtime.waitUntil(runClassification());
-          } else {
-            runClassification().catch(() => {});
-          }
-        } catch (err) {
+        } catch (err: any) {
+          logEvent("stream_error", { message: err.message, session_id, agent_id }, requestId, 'error');
           controller.error(err);
         }
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
-      },
-    });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: String((e as any)?.message ?? e) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    logEvent("response_stream_start", { session_id, agent_id, workspaceId }, requestId);
+    return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" }});
+  } catch (e: any) {
+    const errorMessage = String((e as any)?.message ?? e);
+    logEvent("unhandled_exception", { message: errorMessage }, requestId, 'error');
+    return new Response(JSON.stringify({ error: errorMessage }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }});
   }
 });

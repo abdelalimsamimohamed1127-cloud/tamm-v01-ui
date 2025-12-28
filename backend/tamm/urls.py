@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/', include('analytics.urls')), # Include URLs from our analytics app
     path('api/', include('copilot.urls')), # Our copilot application
     path('api/', include('integrations.urls')), # Include URLs from our integrations app
-    path('api/', include('external_api.urls')), # Include URLs from our external_api app
+    path('api/v1/external/', include('external_api.urls')), # Include URLs from our external_api app
+    path('api/', include('billing.urls')), # Include URLs from our billing app
     path('api/v1/webchat/', include('webchat.urls')), # Include URLs from our new webchat app
 ]

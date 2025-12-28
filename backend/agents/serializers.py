@@ -22,3 +22,25 @@ class ChatRequestSerializer(serializers.Serializer):
     channel = serializers.CharField(max_length=100)
     message = MessageSerializer()
     options = ChatOptionsSerializer(required=False, default={'mode': 'live'})
+
+class AgentRunRequestSerializer(serializers.Serializer):
+    """
+    Serializer for the incoming agent run request body, used by the playground.
+    """
+    agent_id = serializers.UUIDField()
+    message = serializers.CharField() # Simple string message
+    session_id = serializers.CharField(allow_blank=True, required=False) # Optional session_id
+    mode = serializers.ChoiceField(choices=['test', 'live'], default='test') # Default to 'test' for playground
+
+class AgentTemplateSerializer(serializers.Serializer):
+    """
+    Serializer for AgentTemplate model.
+    """
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(allow_null=True, required=False)
+    config_jsonb = serializers.JSONField()
+    created_at = serializers.DateTimeField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    created_by = serializers.UUIDField(allow_null=True, required=False, read_only=True)
+

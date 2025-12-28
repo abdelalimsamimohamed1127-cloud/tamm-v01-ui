@@ -10,14 +10,14 @@ import {
 import { useWorkspace } from "@/hooks/useWorkspace";
 
 export function useChannelDocPermissions(channelKey: string | null) {
-  const { workspace } = useWorkspace();
+  const { workspaceId } = useWorkspace(); // Changed to workspaceId
   const [permissions, setPermissions] = useState<ChannelPermission[]>([]);
   const [languagePermissions, setLanguagePermissions] = useState<ChannelLanguagePermission[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!channelKey) {
+    if (!channelKey || !workspaceId) { // Added check for workspaceId
       setPermissions([]);
       setLanguagePermissions([]);
       return;
@@ -26,8 +26,8 @@ export function useChannelDocPermissions(channelKey: string | null) {
     setError(null);
     try {
       const [p, lp] = await Promise.all([
-        fetchChannelPermissions(workspace.id, channelKey),
-        fetchChannelLanguagePermissions(workspace.id, channelKey),
+        fetchChannelPermissions(workspaceId, channelKey), // Used workspaceId
+        fetchChannelLanguagePermissions(workspaceId, channelKey), // Used workspaceId
       ]);
       setPermissions(p);
       setLanguagePermissions(lp);
@@ -36,7 +36,7 @@ export function useChannelDocPermissions(channelKey: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [workspace.id, channelKey]);
+  }, [workspaceId, channelKey]); // Dependency changed
 
   useEffect(() => {
     load();

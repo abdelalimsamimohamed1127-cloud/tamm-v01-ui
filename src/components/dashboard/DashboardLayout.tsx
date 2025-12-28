@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useWorkspaces } from '@/contexts/WorkspaceContext'; // New import
-import { useWorkspace } from '@/hooks/useWorkspace';
+import { useWorkspace } from '@/hooks';
+import { useQuery } from '@tanstack/react-query'; // NEW IMPORT
+
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Users } from "lucide-react";
 import { AgentProvider } from '@/contexts/AgentContext'
-import { WorkspaceProvider } from '@/contexts/WorkspaceContext' // New import
-import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher' // New import
-import { AgentSwitcher } from '@/components/agent/AgentSwitcher' // New import
+import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
+import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher'
+import { AgentSwitcher } from '@/components/agent/AgentSwitcher'
+import { getWorkspaceWallet, getWorkspacePlan } from '@/services/billing'; // NEW IMPORT
+import { Skeleton } from '@/components/ui/skeleton'; // NEW IMPORT
 
 import {
   DropdownMenu,
@@ -41,16 +44,19 @@ import {
   Users2,
   Send,
   Cog,
-  Workflow
+  Workflow,
+  Link as LinkIcon // Import Link as LinkIcon to avoid conflict with react-router-dom Link
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountDialog from "@/components/settings-dialogs/AccountDialog";
 import CreateWorkspaceDialog from "@/components/settings-dialogs/CreateWorkspaceDialog";
 import ManageAgentsDialog from "@/components/settings-dialogs/ManageAgentsDialog";
+import WorkspaceDialog from "@/components/settings-dialogs/WorkspaceDialog"; // NEW IMPORT
 
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import FloatingCopilotWidget from '@/components/copilot/FloatingCopilotWidget'; // Import the new Copilot widget
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -96,6 +102,12 @@ const navItems: NavItem[] = [
         path: '/dashboard/automations',
       },
       {
+        key: 'integrations', // NEW Integrations Entry
+        title: 'Integrations',
+        icon: LinkIcon, // Using LinkIcon
+        path: '/dashboard/integrations',
+      },
+      {
         key: 'analytics',
         title: 'Analytics',
         icon: BarChart,
@@ -119,31 +131,49 @@ const navItems: NavItem[] = [
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const { t, dir } = useLanguage();
-  const { activeWorkspace } = useWorkspaces(); // Use the new context
-  const { workspace } = useWorkspace(); // Keep for dropdown label for now
+  const { activeWorkspace } = useWorkspace(); // Use the standardized hook
+  // const { workspace } = useWorkspace(); // This line is now redundant
 
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | "create-workspace" | null>(null);
+  const [dialogOpen, setDialogOpen] = useState<"account" | "workspace" | "agents" | "create-workspace" | "workspace-settings" | null>(null); // UPDATED
 
-  type CreditsState = 'normal' | 'warning' | 'blocked';
+  // Fetch Wallet Data
+  const { data: wallet, isLoading: isLoadingWallet } = useQuery({
+    queryKey: ["billing", "wallet", activeWorkspace?.id],
+    queryFn: () => getWorkspaceWallet(activeWorkspace!.id),
+    enabled: Boolean(activeWorkspace?.id && user?.id), // Ensure activeWorkspace and user are available
+  });
 
-  const agentCredits = {
-    used: 2,
-    limit: 50,
-    resetDate: 'Renews on May 1',
-  };
+  // Fetch Plan Data
+  const { data: plan, isLoading: isLoadingPlan } = useQuery({
+    queryKey: ["billing", "plan", activeWorkspace?.id],
+    queryFn: () => getWorkspacePlan(activeWorkspace!.id),
+    enabled: Boolean(activeWorkspace?.id && user?.id),
+  });
 
-  const creditsPercent = agentCredits.limit === 0 ? 0 : (agentCredits.used / agentCredits.limit) * 100;
-  const creditsState: CreditsState = creditsPercent > 100 ? 'blocked' : creditsPercent >= 70 ? 'warning' : 'normal';
-  const creditsStyles: Record<CreditsState, { bar: string; text: string }> = {
-    normal: { bar: 'bg-primary', text: 'text-muted-foreground' },
-    warning: { bar: 'bg-amber-500', text: 'text-amber-700' },
-    blocked: { bar: 'bg-destructive', text: 'text-destructive' },
-  };
+  const creditsRemaining = useMemo(() => wallet?.credits_remaining ?? 0, [wallet]);
+  const creditsUsed = useMemo(() => wallet?.credits_used ?? 0, [wallet]);
+  const totalCredits = creditsRemaining + creditsUsed; // Assuming total is sum of used and remaining for percentage
+  const creditsPercent = totalCredits === 0 ? 0 : (creditsUsed / totalCredits) * 100;
+
+  const humanReadablePlan = useMemo(() => {
+    switch (plan?.plan_key) {
+      case 'free':
+        return 'Free';
+      case 'starter':
+        return 'Starter';
+      case 'pro':
+        return 'Pro';
+      default:
+        return 'Free'; // Default to Free if plan_key is missing or unknown
+    }
+  }, [plan]);
+
+
 
   const handleSignOut = async () => {
     await signOut();
@@ -158,7 +188,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [searchParams]);
 
-  const openDialog = (dialog: "account" | "workspace" | "agents" | "create-workspace") => {
+  const openDialog = (dialog: "account" | "workspace" | "agents" | "create-workspace" | "workspace-settings") => { // UPDATED
     setDialogOpen(dialog);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -291,7 +321,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className="flex items-center">
-                    <img src="/tamm.svg" alt="Tamm" className="h-8" />
+                    {/* <img src="/tamm.svg" alt="Tamm" className="h-8" /> Removed logo from sidebar */}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -317,17 +347,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="rounded-lg border bg-card text-card-foreground p-3 space-y-3">
-                        <div className={cn("flex items-center justify-between", collapsed && "justify-center")}>
-                            {!collapsed && <p className="text-xs font-medium text-muted-foreground">Messages</p>}
-                            <span className="text-xs font-semibold">
-                                {agentCredits.used} / {agentCredits.limit}
-                            </span>
-                        </div>
-                        <Progress
-                            value={creditsPercent}
-                            className="h-2"
-                            indicatorClassName={creditsStyles[creditsState].bar}
-                        />
+                        {isLoadingWallet ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-2 w-full" />
+                          </div>
+                        ) : (
+                          <>
+                            <div className={cn("flex items-center justify-between", collapsed && "justify-center")}>
+                                {!collapsed && <p className="text-xs font-medium text-muted-foreground">Credits Remaining</p>}
+                                <span className="text-xs font-semibold">
+                                    {creditsRemaining}
+                                </span>
+                            </div>
+                            <Progress
+                                value={creditsPercent}
+                                className="h-2"
+                                indicatorClassName="bg-primary" // Simplified styling
+                            />
+                          </>
+                        )}
                         {!collapsed &&
                           <Button variant="default" size="sm" className="w-full">
                               Upgrade
@@ -337,7 +376,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </TooltipTrigger>
                   {collapsed && 
                     <TooltipContent side="right">
-                      <p>{agentCredits.used} / {agentCredits.limit} Messages used</p>
+                      <p>{creditsRemaining} Credits Remaining</p>
                     </TooltipContent>
                   }
                 </Tooltip>
@@ -378,30 +417,44 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex-1 flex flex-col min-w-0 h-screen">
             {/* Top Bar */}
             <header className="h-16 bg-background/95 backdrop-blur-sm shrink-0 border-b flex items-center justify-between px-4 lg:px-6">
-              {/* Left Group: Mobile Menu, Logo, Workspace/Agent Switchers */}
-              <div className="flex items-center gap-3 sm:gap-4"> {/* Adjusted gap for better spacing */}
-                {/* Mobile Menu Button - always visible on lg:hidden */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setMobileOpen(true)}
-                  className="lg:hidden"
-                >
-                  <Menu className="h-5 w-5" />
-                </Button>
-                
-                
+              {/* Left Group: Logo, Workspace/Agent Switchers */}
+              <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+                {/* Mobile Menu Button + Logo */}
+                <div className="flex items-center gap-2 sm:gap-4">
+                  {/* Mobile Menu Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setMobileOpen(true)}
+                    className="lg:hidden"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                  
+                  {/* Logo - always visible here */}
+                  <Link to="/dashboard" className="h-8 w-8 flex-shrink-0 flex items-center justify-center">
+                      <img src="/tamm.svg" alt="Tamm" className="h-full" />
+                  </Link>
+                </div>
 
-                {/* Workspace and Agent Switchers - responsive stacking */}
-                <div className="flex items-center gap-2">
+                {/* Workspace and Agent Switchers - responsive grouping */}
+                <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide py-2">
                   <WorkspaceSwitcher onCreateWorkspaceClick={() => openDialog('create-workspace')} />
-                  <span className="text-muted-foreground hidden sm:inline">/</span>
+                  <span className="text-muted-foreground hidden sm:inline-block">/</span>
                   <AgentSwitcher onCreateAgentClick={() => openDialog('agents')} />
+                  {/* Plan Display */}
+                  {isLoadingPlan ? (
+                    <Skeleton className="h-5 w-24 ml-2" />
+                  ) : (
+                    <Badge variant="secondary" className="ml-2 px-3 py-1 text-sm font-semibold capitalize">
+                      {humanReadablePlan}
+                    </Badge>
+                  )}
                 </div>
               </div>
               
               {/* Right Group: Language Toggle, User Dropdown */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <LanguageToggle />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -414,9 +467,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuLabel className="font-normal p-3">
                         <p className="text-sm font-semibold truncate">{user?.email}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                            {activeWorkspace?.name || 'My Workspace'}
-                        </p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => openDialog('account')} className="p-3">
@@ -427,6 +477,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     <DropdownMenuItem onSelect={() => openDialog('agents')} className="p-3">
                         <Users className="h-4 w-4 mr-3 text-muted-foreground" />
                         <span>Manage Agents</span>
+                    </DropdownMenuItem>
+                    {/* NEW: Workspace Settings DropdownMenuItem */}
+                    <DropdownMenuItem onSelect={() => openDialog('workspace-settings')} className="p-3">
+                        <Cog className="h-4 w-4 mr-3 text-muted-foreground" />
+                        <span>Workspace Settings</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => openDialog('create-workspace')} className="p-3">
                       <BadgePlus className="h-4 w-4 mr-3 text-muted-foreground" />
@@ -446,14 +501,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
               {children}
             </main>
+            <FloatingCopilotWidget /> {/* Integrated floating copilot widget */}
           </div>
 
 
           <AccountDialog open={dialogOpen === 'account'} onOpenChange={closeDialog} />
           <CreateWorkspaceDialog open={dialogOpen === 'create-workspace'} onOpenChange={closeDialog} />
           <ManageAgentsDialog open={dialogOpen === 'agents'} onOpenChange={closeDialog} />
+          <WorkspaceDialog open={dialogOpen === 'workspace-settings'} onOpenChange={closeDialog} /> {/* NEW: WorkspaceDialog */}
         </div>
       </AgentProvider>
     </WorkspaceProvider>
   );
 }
+

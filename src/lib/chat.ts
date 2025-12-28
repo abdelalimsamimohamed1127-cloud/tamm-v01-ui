@@ -1,56 +1,29 @@
-import { supabase } from '@/lib/supabase'
+import { runAgentStream, AgentRuntimeRequest } from '@/lib/agentRuntime';
 
-type StreamHandler = (chunk: string) => void
+type StreamHandler = (chunk: string) => void;
 
 export async function sendMessageToAgent(
   agentId: string,
   message: string,
-  sessionId: string,
+  sessionId?: string, // Make sessionId optional as it is in AgentRuntimeRequest
+  mode: "test" | "live" = "live", // Add mode with default
   onChunk: StreamHandler,
 ): Promise<void> {
-  const { data } = await supabase.auth.getSession()
-  const accessToken = data?.session?.access_token ?? null
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const request: AgentRuntimeRequest = {
+    agent_id: agentId,
+    message: message,
+    session_id: sessionId,
+    mode: mode,
+  };
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`
-  } else if (anonKey) {
-    headers.apikey = anonKey
-  }
-
-  const response = await fetch(`${supabaseUrl}/functions/v1/run_agent`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      agent_id: agentId,
-      message,
-      session_id: sessionId,
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error('Network response was not ok')
-  }
-
-  if (!response.body) {
-    throw new Error('No response body')
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    const text = decoder.decode(value, { stream: true })
-    if (text) onChunk(text)
-  }
-
-  const finalText = decoder.decode()
-  if (finalText) onChunk(finalText)
+  await runAgentStream(request, (event) => {
+    if (event.type === "token" && event.content) {
+      onChunk(event.content);
+    }
+    if (event.type === "error" && event.content) {
+        console.error("Error from agent runtime:", event.content);
+        // In a real scenario, onChunk might be used to display an error message to the user
+        // or a different error callback passed. For now, logging.
+    }
+  });
 }

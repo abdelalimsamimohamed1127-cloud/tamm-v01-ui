@@ -34,7 +34,7 @@ export default function HeroSection({ content }: HeroSectionProps) {
         <motion.div variants={fadeInUp} className="mb-6">
           <span className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium">
             <Sparkles className="h-4 w-4" />
-            AI-Powered Social Commerce
+            {content.badge_text || 'AI-Powered Social Commerce'}
           </span>
         </motion.div>
         

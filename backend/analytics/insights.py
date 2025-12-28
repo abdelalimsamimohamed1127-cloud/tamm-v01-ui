@@ -1,156 +1,266 @@
-import openai
-import os
-import json
+import logging
 import uuid
-from typing import Dict, Any
-import time
 import datetime
+import json
+from typing import Dict, Any, List, Optional
+import os
 
-from django.conf import settings
-from rest_framework import exceptions
+from supabase import create_client, Client
+from django.conf import settings # Assuming Django settings are accessible
 
-from analytics.supabase_repo import AnalyticsSupabaseRepo
-from concurrent.futures import ThreadPoolExecutor
-from core.errors import AIAProviderError
+# NOTE: This file should import `analytics_repo` from `backend.analytics.supabase_repo`
+# which is not explicitly defined in the problem description, but a common pattern.
+# For now, we will create a direct Supabase client.
+# In a real scenario, this would be a dedicated repository.
 
-# --- AI Client Initialization ---
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise exceptions.ImproperlyConfigured("OPENAI_API_KEY is not configured in environment variables or Django settings.")
+logger = logging.getLogger(__name__)
 
-db_executor = ThreadPoolExecutor(max_workers=5) # For background insight storage
-
-class CircuitBreaker:
-    FAILURE_THRESHOLD = 3
-    RECOVERY_TIMEOUT = 60  # seconds
-
-    def __init__(self):
-        self.failures = 0
-        self.last_failure_time = 0
-        self.state = "CLOSED"
-
-    def is_open(self):
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.RECOVERY_TIMEOUT:
-                self.state = "HALF-OPEN"
-                return False
-            return True
-        return False
-
-    def record_failure(self):
-        self.failures += 1
-        if self.failures >= self.FAILURE_THRESHOLD:
-            self.state = "OPEN"
-            self.last_failure_time = time.time()
-
-    def record_success(self):
-        self.state = "CLOSED"
-        self.failures = 0
-
-openai_circuit_breaker = CircuitBreaker()
-
-class InsightsEngine:
+class InsightsEngine: # Renamed from InsightGenerator
     """
-    Generates AI-powered insights from aggregated analytics data.
+    Generates and stores insights from analytics data.
     """
-    def __init__(self, user_jwt: str, workspace_id: uuid.UUID):
-        self.openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        self.analytics_repo = AnalyticsSupabaseRepo(user_jwt)
+    _client: Client
+
+    def __init__(self, workspace_id: uuid.UUID, user_jwt: str):
         self.workspace_id = workspace_id
-
-    def _get_system_prompt(self, persona: str = "workspace_insights") -> str:
-        """
-        Returns the system prompt for the AI model based on the persona.
-        """
-        if persona == "workspace_insights":
-            return """You are a highly skilled business analyst and data scientist, specializing in social commerce and AI agent performance.
-            Your task is to analyze aggregated data, identify trends, explain possible reasons, and suggest actionable insights.
-            Focus on agent performance, message sentiment, and user engagement metrics.
-            Your analysis should be clear, concise, and professional. Avoid making up data or offering insights not supported by the provided information.
-            Structure your response as a JSON object with keys: "explanation", "reasons", "suggestions".
-            Example: {"explanation": "...", "reasons": ["...", "..."], "suggestions": ["...", "..."]}
-            """
-        return "You are a helpful AI assistant." # Default
-
-    def _format_data_for_ai(self, analytics_data: Dict[str, Any]) -> str:
-        """
-        Converts structured analytics data into a human-readable summary for the AI.
-        """
-        summary_parts = ["Here is a summary of the analytics data:"]
+        self.user_jwt = user_jwt
+        self.analytics_repo = AnalyticsSupabaseRepo(user_jwt) # Use the existing repo
         
-        if analytics_data.get("total_messages") is not None:
-            summary_parts.append(f"- Total messages processed: {analytics_data['total_messages']}")
-        if analytics_data.get("ai_response_rate") is not None:
-            summary_parts.append(f"- AI response rate: {analytics_data['ai_response_rate']:.2%}")
-        if analytics_data.get("avg_response_time") is not None:
-            summary_parts.append(f"- Average response time (AI): {analytics_data['avg_response_time']} seconds")
+        # Original Supabase client (only for direct table access for insights storage/check)
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY") # Or service key if available
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set.")
+        self._client = create_client(supabase_url, supabase_key)
+
+    def _get_table(self, table_name: str):
+        return self._client.table(table_name)
+
+    def _query_daily_stats(self, period_start: datetime.date, period_end: datetime.date) -> List[Dict]:
+        """ Fetches daily_stats for the period. """
+        response = self._get_table("daily_stats").select("*") \
+            .eq("workspace_id", str(self.workspace_id)) \
+            .gte("date", period_start.isoformat()) \
+            .lte("date", period_end.isoformat()) \
+            .order("date", { "ascending": True }) \
+            .execute()
+        return response.data if response.data else []
+
+    def _query_usage_events(self, period_start: datetime.date, period_end: datetime.date) -> List[Dict]:
+        """ Fetches usage_events for the period. """
+        response = self._get_table("usage_events").select("event_type, quantity") \
+            .eq("workspace_id", str(self.workspace_id)) \
+            .gte("created_at", period_start.isoformat()) \
+            .lte("created_at", period_end.isoformat()) \
+            .execute()
+        return response.data if response.data else []
+
+    def _insight_exists(self, insight_type: str, period_start: datetime.date, period_end: datetime.date) -> bool:
+        """ Checks if an insight for the given type and period already exists. """
+        response = self._get_table("analytics_insights").select("id") \
+            .eq("workspace_id", str(self.workspace_id)) \
+            .eq("insight_type", insight_type) \
+            .eq("period_start", period_start.isoformat()) \
+            .eq("period_end", period_end.isoformat()) \
+            .limit(1) \
+            .execute()
+        return bool(response.data)
+
+    def _store_insight(self, insight_type: str, title: str, summary: str,
+                       payload: Dict, period_start: datetime.date, period_end: datetime.date):
+        """ Stores a generated insight. """
+        insight_data = {
+            "id": str(uuid.uuid4()),
+            "workspace_id": str(self.workspace_id),
+            "period_start": period_start.isoformat(), # Store as ISO format for Supabase date type
+            "period_end": period_end.isoformat(),     # Store as ISO format for Supabase date type
+            "insight_type": insight_type,
+            "title": title,
+            "summary": summary,
+            "payload": json.dumps(payload), # Ensure payload is stored as JSON string
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        response = self._get_table("analytics_insights").insert(insight_data).execute()
+        if not response.data:
+            logger.error(f"Failed to store insight: {insight_type} for workspace {self.workspace_id}")
+        return response.data
+
+    def _generate_conversation_volume_trend(self, daily_stats: List[Dict], period_start: datetime.date, period_end: datetime.date):
+        insight_type = "conversation_volume_trend"
+        if self._insight_exists(insight_type, period_start, period_end): return
         
-        sentiment = analytics_data.get("sentiment")
-        if sentiment:
-            total_sentiment = sum(sentiment.values())
-            if total_sentiment > 0:
-                positive_perc = (sentiment.get("positive", 0) / total_sentiment) * 100
-                neutral_perc = (sentiment.get("neutral", 0) / total_sentiment) * 100
-                negative_perc = (sentiment.get("negative", 0) / total_sentiment) * 100
-                summary_parts.append(f"- Message Sentiment: Positive {positive_perc:.1f}%, Neutral {neutral_perc:.1f}%, Negative {negative_perc:.1f}%")
+        if not daily_stats: return
+
+        first_day_conv = daily_stats[0].get("conversations_count", 0)
+        last_day_conv = daily_stats[-1].get("conversations_count", 0)
+        total_conv = sum(s.get("conversations_count", 0) for s in daily_stats)
+
+        trend = "stable"
+        percentage_change = 0
+        if first_day_conv > 0:
+            percentage_change = ((last_day_conv - first_day_conv) / first_day_conv) * 100
+            if percentage_change > 10: trend = "increased significantly"
+            elif percentage_change < -10: trend = "decreased significantly"
+            elif percentage_change > 0: trend = "increased slightly"
+            elif percentage_change < 0: trend = "decreased slightly"
         
-        return "\n".join(summary_parts)
+        title = f"Conversation Volume Trend: {trend.capitalize()}"
+        summary = f"Total conversations for the period: {total_conv}. {trend.capitalize()} by {percentage_change:.2f}% from {first_day_conv} to {last_day_conv}."
+        payload = {
+            "total_conversations": total_conv,
+            "percentage_change": percentage_change,
+            "trend": trend,
+            "daily_data": [{"date": s["date"], "conversations_count": s.get("conversations_count", 0)} for s in daily_stats]
+        }
+        self._store_insight(insight_type, title, summary, payload, period_start, period_end)
 
-    def generate_insight(self, question: str, context: Dict[str, Any], agent_id: uuid.UUID = None) -> Dict[str, Any]:
-        """
-        Generates an AI-powered insight based on a question and analytics context.
-        """
-        start_date = context.get("start_date", datetime.date.today() - datetime.timedelta(days=7))
-        end_date = context.get("end_date", datetime.date.today())
+    def _generate_top_agent_channel_usage(self, daily_stats: List[Dict], period_start: datetime.date, period_end: datetime.date):
+        insight_type = "top_agent_channel_usage"
+        if self._insight_exists(insight_type, period_start, period_end): return
 
-        overview_data = self.analytics_repo.get_overview_metrics(
-            workspace_id=self.workspace_id,
-            start_date=start_date,
-            end_date=end_date,
-            agent_id=agent_id
-        )
-        
-        data_summary_for_ai = self._format_data_for_ai(overview_data)
-
-        system_prompt = self._get_system_prompt()
-        user_query = f"Based on the following data summary, please answer the question: '{question}'\n\nData Summary:\n{data_summary_for_ai}"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
-        ]
-
-        if openai_circuit_breaker.is_open():
-            raise AIAProviderError("AI provider is currently unavailable (Circuit Breaker is open).")
+        top_agents = []
+        top_channels = []
 
         try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                timeout=60.0, # 60-second timeout
+            agent_breakdown = self.analytics_repo.get_breakdown_data(
+                workspace_id=self.workspace_id,
+                start_date=period_start,
+                end_date=period_end,
+                breakdown_by="agent"
             )
-            
-            insight_raw = response.choices[0].message.content
-            insight_json = json.loads(insight_raw)
-
-            openai_circuit_breaker.record_success()
-
-            db_executor.submit(self.analytics_repo.store_insight, {
-                "workspace_id": self.workspace_id,
-                "agent_id": agent_id,
-                "summary_text": insight_raw,
-            })
-
-            return insight_json
-
-        except openai.APIError as e:
-            openai_circuit_breaker.record_failure()
-            raise AIAProviderError(f"OpenAI API error during insight generation: {e}")
-        except json.JSONDecodeError as e:
-            # This is not an AI provider error, but a data processing error.
-            raise exceptions.APIException(f"Failed to parse AI response for insights: {e}. Raw: {insight_raw}")
+            if agent_breakdown:
+                # Assuming agent_breakdown contains 'agent_id' and a metric like 'total_messages'
+                sorted_agents = sorted(agent_breakdown, key=lambda x: x.get("total_messages", 0), reverse=True)
+                top_agents = sorted_agents[:3] # Get top 3 agents
         except Exception as e:
-            openai_circuit_breaker.record_failure()
-            raise AIAProviderError(f"Failed to generate insight: {e}")
+            logger.warning(f"Could not fetch agent breakdown data: {e}")
+
+        try:
+            channel_breakdown = self.analytics_repo.get_breakdown_data(
+                workspace_id=self.workspace_id,
+                start_date=period_start,
+                end_date=period_end,
+                breakdown_by="channel"
+            )
+            if channel_breakdown:
+                # Assuming channel_breakdown contains 'channel' and 'total_messages'
+                sorted_channels = sorted(channel_breakdown, key=lambda x: x.get("total_messages", 0), reverse=True)
+                top_channels = sorted_channels[:3] # Get top 3 channels
+        except Exception as e:
+            logger.warning(f"Could not fetch channel breakdown data: {e}")
+
+        if not top_agents and not top_channels:
+            logger.info("No agent or channel breakdown data to generate insight.")
+            return
+        
+        title = "Top Agent & Channel Usage"
+        summary_parts = []
+        payload_data = {}
+
+        if top_agents:
+            agent_summaries = [f"{a.get('agent_name', 'Unknown Agent')} ({a.get('total_messages', 0)} messages)" for a in top_agents]
+            summary_parts.append(f"Top Agents: {'; '.join(agent_summaries)}")
+            payload_data["top_agents"] = top_agents
+        
+        if top_channels:
+            channel_summaries = [f"{c.get('channel', 'Unknown Channel')} ({c.get('total_messages', 0)} messages)" for c in top_channels]
+            summary_parts.append(f"Top Channels: {'; '.join(channel_summaries)}")
+            payload_data["top_channels"] = top_channels
+        
+        summary = ". ".join(summary_parts) if summary_parts else "No significant agent or channel usage detected for the period."
+
+        self._store_insight(insight_type, title, summary, payload_data, period_start, period_end)
+
+
+    def _generate_message_to_order_conversion(self, daily_stats: List[Dict], period_start: datetime.date, period_end: datetime.date):
+        insight_type = "message_to_order_conversion"
+        if self._insight_exists(insight_type, period_start, period_end): return
+
+        if not daily_stats: return
+
+        total_messages = sum(s.get("messages_count", 0) for s in daily_stats)
+        total_orders = sum(s.get("orders_count", 0) for s in daily_stats)
+        
+        conversion_rate = (total_orders / total_messages * 100) if total_messages > 0 else 0
+        
+        title = "Message to Order Conversion"
+        summary = f"Conversion Rate: {conversion_rate:.2f}% ({total_orders} orders from {total_messages} messages)."
+        payload = {
+            "total_messages": total_messages,
+            "total_orders": total_orders,
+            "conversion_rate": conversion_rate,
+        }
+        self._store_insight(insight_type, title, summary, payload, period_start, period_end)
+
+    def _generate_usage_spike_detection(self, usage_events: List[Dict], period_start: datetime.date, period_end: datetime.date):
+        insight_type = "usage_spike_detection"
+        if self._insight_exists(insight_type, period_start, period_end): return
+
+        if not usage_events: return
+
+        # Basic spike detection: find days with significantly higher usage than average
+        daily_usage = {}
+        for event in usage_events:
+            event_date = datetime.datetime.fromisoformat(event["created_at"].replace('Z', '+00:00')).date()
+            if period_start <= event_date <= period_end:
+                date_str = event_date.isoformat()
+                daily_usage[date_str] = daily_usage.get(date_str, 0) + event.get("quantity", 0)
+
+        usage_values = list(daily_usage.values())
+        if not usage_values: return
+
+        average_usage = sum(usage_values) / len(usage_values)
+        spike_days = []
+        for date_str, quantity in daily_usage.items():
+            if quantity > average_usage * 1.5: # 50% above average
+                spike_days.append({"date": date_str, "quantity": quantity})
+        
+        if spike_days:
+            title = "Usage Spike Detected"
+            summary = f"Spikes detected on {len(spike_days)} days with usage significantly above average ({average_usage:.2f})."
+            payload = {
+                "average_usage": average_usage,
+                "spike_days": spike_days,
+                "daily_usage": daily_usage
+            }
+            self._store_insight(insight_type, title, summary, payload, period_start, period_end)
+        else:
+            logger.info("No significant usage spikes detected.")
+
+
+    def generate_structured_insights(self, period_start: datetime.date, period_end: datetime.date): # Renamed from generate_insights
+        """ Orchestrates the generation of all insights for a given period. """
+        logger.info(
+            f"Starting structured insight generation for workspace {self.workspace_id} from {period_start} to {period_end}"
+        )
+
+        daily_stats = self._query_daily_stats(period_start, period_end)
+        usage_events = self._query_usage_events(period_start, period_end)
+
+        self._generate_conversation_volume_trend(daily_stats, period_start, period_end)
+        self._generate_top_agent_channel_usage(daily_stats, period_start, period_end)
+        self._generate_message_to_order_conversion(daily_stats, period_start, period_end)
+        self._generate_usage_spike_detection(usage_events, period_start, period_end)
+
+        logger.info(
+            f"Finished structured insight generation for workspace {self.workspace_id} from {period_start} to {period_end}"
+        )
+    
+    def generate_insight(self, question: str, context: Dict[str, Any], agent_id: Optional[uuid.UUID] = None) -> Dict[str, Any]:
+        """
+        Placeholder for AI-powered insight generation.
+        This would typically involve calling an LLM or an AI model.
+        """
+        logger.warning(
+            f"AI-powered insight generation not yet fully implemented. Question: '{question}' for workspace {self.workspace_id}"
+        )
+        return {
+            "insight_type": "ai_powered_summary",
+            "title": f"AI Insight for '{question}'",
+            "summary": "This is a placeholder for an AI-generated insight based on your question.",
+            "payload": {
+                "question": question,
+                "context": context,
+                "agent_id": str(agent_id) if agent_id else None
+            }
+        }

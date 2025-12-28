@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Bar,
   BarChart,
@@ -14,12 +14,16 @@ import {
   YAxis,
   Cell,
 } from "recharts";
-import { addDays, startOfDay } from 'date-fns';
+import { addDays, startOfDay, format } from 'date-fns';
 
-import { supabase } from "@/integrations/supabase/client";
+import { getChatSessionSummaries } from "@/services";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InsightsFilters, type FiltersState } from "./InsightsFilters";
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspace } from "@/hooks";
+import { toast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
 
 export type ChatSessionSummary = {
   id: string;
@@ -35,6 +39,7 @@ export type ChatSessionSummary = {
 
 type InsightsExplorerProps = {
   onSessionsChange?: (sessions: ChatSessionSummary[]) => void;
+  onInsightGenerationComplete?: () => void;
 };
 
 const SENTIMENT_SCORE: Record<string, number> = {
@@ -65,16 +70,76 @@ function normalizeChannel(channel: string | null | undefined) {
   return channel.toLowerCase();
 }
 
-export default function InsightsExplorer({ onSessionsChange }: InsightsExplorerProps) {
+export default function InsightsExplorer({ onSessionsChange, onInsightGenerationComplete }: InsightsExplorerProps) {
+  const { auth } = useAuth();
+  const { workspace } = useWorkspace();
+  
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [topicOptions, setTopicOptions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [filters, setFilters] = useState<FiltersState>({
     dateRange: buildDefaultDateRange(),
     topics: [],
     sentiments: [],
     channel: 'all',
   });
+
+  const handleGenerateInsights = useCallback(async () => {
+    if (!workspace?.id || !auth?.token) {
+      toast({
+        title: "Authentication Error",
+        description: "Could not find workspace ID or user token.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!filters.dateRange?.from || !filters.dateRange?.to) {
+      toast({
+        title: "Date Range Required",
+        description: "Please select a date range to generate insights.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch(`/api/v1/analytics/insights`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${auth.token}`,
+        },
+        body: JSON.stringify({
+          workspace_id: workspace.id,
+          period_start: format(filters.dateRange.from, 'yyyy-MM-dd'),
+          period_end: format(filters.dateRange.to, 'yyyy-MM-dd'),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Error triggering insight generation: ${response.statusText}`);
+      }
+
+      toast({
+        title: "Insight Generation Triggered",
+        description: "Insights are being generated in the background.",
+      });
+      onInsightGenerationComplete?.(); // Notify parent to refresh insights
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      console.error("Error generating insights:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [workspace?.id, auth?.token, filters.dateRange, onInsightGenerationComplete]);
 
   useEffect(() => {
     async function fetchSessions() {
@@ -88,16 +153,7 @@ export default function InsightsExplorer({ onSessionsChange }: InsightsExplorerP
         const toEndOfDay = new Date(to);
         toEndOfDay.setHours(23, 59, 59, 999);
 
-        const { data, error } = await supabase
-          .from("chat_sessions")
-          .select(
-            "id, topic, sentiment, urgency, channel, channel_id, created_at, external_user_id, user_id, session_id",
-          )
-          .gte("created_at", from.toISOString())
-          .lte("created_at", toEndOfDay.toISOString())
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
+        const data = await getChatSessionSummaries(workspace.id, from.toISOString(), toEndOfDay.toISOString());
 
         const mapped = (data ?? []).map((row: any) => ({
           id: String(row.id ?? ""),
@@ -210,12 +266,17 @@ export default function InsightsExplorer({ onSessionsChange }: InsightsExplorerP
 
   return (
     <div className="space-y-4">
-      <InsightsFilters 
-        filters={filters}
-        onFiltersChange={setFilters}
-        topicOptions={topicOptions}
-        activeFilterCount={activeFilterCount}
-      />
+      <div className="flex justify-between items-center mb-4">
+        <InsightsFilters 
+          filters={filters}
+          onFiltersChange={setFilters}
+          topicOptions={topicOptions}
+          activeFilterCount={activeFilterCount}
+        />
+        <Button onClick={handleGenerateInsights} disabled={isGenerating || !filters.dateRange?.from || !filters.dateRange?.to}>
+          {isGenerating ? "Generating..." : "Generate Insights"}
+        </Button>
+      </div>
       
       <div className="flex-1 min-w-0">
         {isLoading ? (
@@ -332,3 +393,4 @@ export default function InsightsExplorer({ onSessionsChange }: InsightsExplorerP
     </div>
   );
 }
+

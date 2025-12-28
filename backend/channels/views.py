@@ -8,6 +8,8 @@ from core.auth import SupabaseJWTAuthentication
 from core.permissions import IsWorkspaceMember
 from channels.events import ChannelEventHandler
 
+from backend.automations.engine import engine as automations_engine # Import the automations engine
+
 import uuid
 
 # --- Serializers ---
@@ -27,11 +29,12 @@ class ChannelSendSerializer(serializers.Serializer):
     Serializer for sending outbound messages (from UI or AI runtime).
     """
     conversation_id = serializers.UUIDField()
-    agent_id = serializers.UUIDField()
+    agent_id = serializers.UUIDField(required=False, allow_null=True) # Agent ID might not be present if human sends
     channel = serializers.CharField(max_length=100)
-    external_user_id = serializers.CharField(max_length=255)
+    external_user_id = serializers.CharField(max_length=255) # Recipient's external ID
     content = serializers.CharField()
     message_type = serializers.CharField(max_length=50, default="text")
+    sender_type = serializers.ChoiceField(choices=['human', 'agent'], default='human') # New field
 
 
 import logging
@@ -70,6 +73,27 @@ class ChannelEventAPIView(APIView):
             
             if event_data['event'] == 'message_received':
                 handler.handle_incoming_message(event_data)
+                # --- AUTOMATIONS ENGINE INTEGRATION ---
+                try:
+                    automations_engine.trigger(
+                        event_name="message_received",
+                        workspace_id=workspace_id,
+                        payload={
+                            "id": str(event_data["message_id"]), # Unique ID for idempotency
+                            "workspace_id": str(workspace_id),
+                            "agent_id": str(event_data["agent_id"]),
+                            "channel": event_data["channel"],
+                            "message_content": event_data["message"].get("content"),
+                            "raw_message_data": event_data["message"],
+                        }
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Error triggering automations engine for message_received",
+                        extra={"message_id": event_data["message_id"], "error": str(e)},
+                        exc_info=True,
+                    )
+                # --- END AUTOMATIONS ENGINE INTEGRATION ---
             else:
                 raise exceptions.ValidationError(f"Unknown event type: {event_data['event']}")
 

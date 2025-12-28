@@ -7,10 +7,9 @@ from rest_framework import exceptions
 
 from core.auth import SupabaseJWTAuthentication
 from core.permissions import IsWorkspaceMember
-from analytics.serializers import AnalyticsQuerySerializer, InsightsQuestionSerializer
+from analytics.serializers import AnalyticsQuerySerializer, InsightsQuestionSerializer, StructuredInsightRequestSerializer # Import new serializer
 from analytics.supabase_repo import AnalyticsSupabaseRepo
-from analytics.insights import InsightsEngine
-
+from analytics.insights import InsightsEngine # Ensure this is the correct InsightsEngine class
 
 import logging
 from core.errors import SupabaseUnavailableError, AIAProviderError
@@ -159,22 +158,93 @@ class AnalyticsBreakdownAPIView(APIView):
 
 class InsightsAPIView(APIView):
     """
-    API endpoint for generating AI-powered insights from analytics data.
+    API endpoint for generating AI-powered insights from analytics data,
+    or for triggering structured insight generation.
     POST /api/v1/analytics/insights
     """
     authentication_classes = [SupabaseJWTAuthentication]
     permission_classes = [IsWorkspaceMember]
     # TODO: Add throttling for this endpoint as it hits AI models
 
-    def post(self, request, *args, **kwargs):
-        serializer = InsightsQuestionSerializer(data=request.data)
+    def get(self, request, *args, **kwargs):
+        serializer = AnalyticsQuerySerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
-
-        question = serializer.validated_data['question']
-        context = serializer.validated_data.get('context', {})
 
         workspace_id = request.workspace_id
         user_jwt = request.auth
+
+        start_date = serializer.validated_data.get('start_date')
+        end_date = serializer.validated_data.get('end_date')
+        insight_type = serializer.validated_data.get('insight_type')
+
+        logger.info(
+            "Fetching insights",
+            extra={
+                "workspace_id": workspace_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "insight_type": insight_type,
+            },
+        )
+        try:
+            repo = AnalyticsSupabaseRepo(user_jwt)
+            insights = repo.get_insights(
+                workspace_id=workspace_id,
+                start_date=start_date,
+                end_date=end_date,
+                insight_type=insight_type
+            )
+            return Response(insights, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(
+                "Error fetching insights",
+                extra={"workspace_id": workspace_id, "error": str(e)},
+                exc_info=True,
+            )
+            raise SupabaseUnavailableError(detail=f"Could not fetch insights: {e}")
+
+    def post(self, request, *args, **kwargs):
+        workspace_id = request.workspace_id
+        user_jwt = request.auth
+
+        # Check if this is a request for structured insight generation
+        if "period_start" in request.data and "period_end" in request.data:
+            structured_serializer = StructuredInsightRequestSerializer(data=request.data)
+            structured_serializer.is_valid(raise_exception=True)
+
+            period_start = structured_serializer.validated_data['period_start']
+            period_end = structured_serializer.validated_data['period_end']
+
+            logger.info(
+                "Triggering structured insight generation",
+                extra={
+                    "workspace_id": workspace_id,
+                    "period_start": period_start,
+                    "period_end": period_end,
+                },
+            )
+
+            try:
+                insights_engine = InsightsEngine(workspace_id=workspace_id, user_jwt=user_jwt) # Instantiate my InsightsEngine
+                insights_engine.generate_structured_insights(
+                    period_start=period_start,
+                    period_end=period_end
+                )
+                return Response({"status": "Insight generation triggered."}, status=status.HTTP_202_ACCEPTED)
+            except Exception as e:
+                logger.error(
+                    "Error triggering structured insight generation",
+                    extra={"workspace_id": workspace_id, "error": str(e)},
+                    exc_info=True,
+                )
+                raise exceptions.APIException(detail=f"An unexpected error occurred while triggering insight generation: {e}")
+
+        # Fallback to AI-powered insight generation (existing logic)
+        ai_serializer = InsightsQuestionSerializer(data=request.data)
+        ai_serializer.is_valid(raise_exception=True)
+
+        question = ai_serializer.validated_data['question']
+        context = ai_serializer.validated_data.get('context', {})
         
         logger.info(
             "Generating AI insight",
@@ -186,7 +256,7 @@ class InsightsAPIView(APIView):
         )
 
         try:
-            # Date and UUID validation logic...
+            # Date and UUID validation logic... (as per existing code)
             if 'range' in context:
                 if context['range'] == '7d':
                     context['start_date'] = datetime.date.today() - datetime.timedelta(days=7)
@@ -204,7 +274,7 @@ class InsightsAPIView(APIView):
             if agent_id and not isinstance(agent_id, uuid.UUID):
                 context['agent_id'] = uuid.UUID(agent_id)
 
-            insights_engine = InsightsEngine(user_jwt=user_jwt, workspace_id=workspace_id)
+            insights_engine = InsightsEngine(workspace_id=workspace_id, user_jwt=user_jwt) # The existing AI-powered InsightsEngine
             
             insight_response = insights_engine.generate_insight(
                 question=question,

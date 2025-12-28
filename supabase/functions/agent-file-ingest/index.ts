@@ -1,3 +1,12 @@
+// ==============================================================================
+// DEPRECATED: This Edge Function is deprecated.
+// All knowledge ingestion, including file-based, should now go through the
+// Django backend API (e.g., /api/v1/knowledge/ingest). The Django pipeline
+// handles text extraction, chunking, embedding, and storage in a centralized
+// and more robust manner. This function is retained for compatibility but
+// should not be used for new development.
+// ==============================================================================
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { Buffer } from "node:buffer";
 import pdfParse from "npm:pdf-parse@1.1.1";

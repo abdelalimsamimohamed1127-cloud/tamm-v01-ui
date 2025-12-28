@@ -1,6 +1,6 @@
 // src/components/workspace/WorkspaceSwitcher.tsx
 import * as React from "react"
-import { ChevronsUpDown, PlusCircle, Search } from "lucide-react" // Import PlusCircle icon and Search icon
+import { ChevronsUpDown, PlusCircle, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -14,15 +14,16 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useWorkspaces } from "@/contexts/WorkspaceContext"
-import { Input } from "@/components/ui/input" // Import Input component
+import { useWorkspace } from "@/hooks" // Corrected import path
+
+import { Input } from "@/components/ui/input"
 
 interface WorkspaceSwitcherProps {
   onCreateWorkspaceClick: () => void;
 }
 
-export function WorkspaceSwitcher({ onCreateWorkspaceClick }: WorkspaceSwitcherProps) { // Accept prop
-  const { activeWorkspace, workspaces, setWorkspace, isLoading } = useWorkspaces()
+export function WorkspaceSwitcher({ onCreateWorkspaceClick }: WorkspaceSwitcherProps) {
+  const { activeWorkspace, workspaces, setWorkspace, isLoading } = useWorkspace() // Corrected hook usage
   const [searchTerm, setSearchTerm] = React.useState("")
 
   const filteredWorkspaces = workspaces.filter(workspace =>

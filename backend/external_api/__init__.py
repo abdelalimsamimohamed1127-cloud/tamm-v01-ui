@@ -1,1 +1,1 @@
-# This file makes the 'external_api' directory a Python package.
+# backend/external_api/__init__.py

@@ -1,17 +1,11 @@
-import { z, ZodError, type ZodTypeAny } from "zod";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
+import {
+  ChannelDTO,
+  UpsertChannelConfigDTO,
+  AgentChannelStatus,
+  ChannelPlatform,
+} from "@/types/dto/channels.dto";
 
-export type ChannelPlatform = "webchat" | "whatsapp" | "messenger" | "email";
-
-export interface AgentChannel {
-  id: string;
-  agent_id: string;
-  platform: ChannelPlatform;
-  config: any;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
 function ensureSupabase() {
   if (!supabase || !isSupabaseConfigured) {
@@ -19,43 +13,55 @@ function ensureSupabase() {
   }
 }
 
-export async function getAgentChannels(agentId: string): Promise<AgentChannel[]> {
+export async function getAgentChannels(workspaceId: string, agentId: string): Promise<ChannelDTO[]> {
   ensureSupabase();
 
   const { data, error } = await supabase
     .from("agent_channels")
     .select("*")
+    .eq("workspace_id", workspaceId)
     .eq("agent_id", agentId);
 
   if (error) throw error;
-  return (data ?? []) as AgentChannel[];
+  return (data ?? []) as ChannelDTO[];
 }
 
-export async function toggleChannel(agentId: string, platform: ChannelPlatform, isActive: boolean) {
+export async function upsertChannelConfig(payload: UpsertChannelConfigDTO) {
   ensureSupabase();
 
   const { error } = await supabase
     .from("agent_channels")
-    .upsert(
-      { agent_id: agentId, platform, is_active: isActive },
-      { onConflict: "agent_id,platform" }
-    );
+    .upsert(payload, { onConflict: "agent_id,platform" });
 
   if (error) throw error;
 }
 
-export async function updateChannelConfig(
-  agentId: string,
-  platform: ChannelPlatform,
-  config: unknown
-) {
+export async function disconnectChannel(id: string) {
   ensureSupabase();
 
   const { error } = await supabase
     .from("agent_channels")
-    .update({ config })
+    .update({ is_active: false, status: 'disconnected' })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function getAgentChannel(agentId: string, platform: ChannelPlatform): Promise<ChannelDTO | null> {
+  ensureSupabase();
+
+  const { data, error } = await supabase
+    .from("agent_channels")
+    .select("*")
     .eq("agent_id", agentId)
-    .eq("platform", platform);
+    .eq("platform", platform)
+    .single();
 
-  if (error) throw error;
+  if (error) {
+    if (error.code === 'PGRST116') { // No rows found
+      return null;
+    }
+    throw error;
+  }
+  return (data as ChannelDTO) ?? null;
 }

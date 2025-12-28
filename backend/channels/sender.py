@@ -39,15 +39,9 @@ class ChannelSender:
         else:
             raise exceptions.APIException(f"Unsupported channel for sending: {channel}")
         
-        self.repo.create_outbound_message({
-            "workspace_id": workspace_id,
-            "agent_id": agent_id,
-            "channel": channel,
-            "external_user_id": external_user_id,
-            "content": content,
-            "message_type": message_type,
-            "raw_payload": {"status": "sent", "provider": channel}
-        })
+        # Persistence is handled by ChannelEventHandler.handle_outbound_reply
+        # after calling this send_message method.
+
 
     def _send_whatsapp_message(self,
                                workspace_id: uuid.UUID,
@@ -92,11 +86,16 @@ class ChannelSender:
         Sends a message via Facebook Messenger API.
         """
         try:
-            page_config = self.repo.fetch_messenger_page_config(workspace_id, agent_id)
-            page_access_token = page_config.get("page_access_token")
+            channel_data = self.repo.get_agent_channel(agent_id, "messenger")
+            config = channel_data.get("config", {})
+            token_ref = config.get("page_access_token_ref")
 
+            if not token_ref:
+                raise exceptions.ImproperlyConfigured(f"page_access_token_ref not configured for agent {agent_id}")
+
+            page_access_token = os.getenv(token_ref)
             if not page_access_token:
-                raise exceptions.ImproperlyConfigured(f"Page Access Token not configured for agent {agent_id}")
+                raise exceptions.ImproperlyConfigured(f"Secret for token reference '{token_ref}' not found in environment.")
 
             messenger_api_url = "https://graph.facebook.com/v18.0/me/messages"
             
@@ -113,8 +112,8 @@ class ChannelSender:
             
             response = requests.post(messenger_api_url, headers=headers, json=payload, timeout=15)
             response.raise_for_status()
-        except SupabaseUnavailableError as e:
-            raise e # Re-raise to be handled by view
+        except (SupabaseUnavailableError, exceptions.NotFound, exceptions.ImproperlyConfigured) as e:
+            raise e
         except requests.exceptions.RequestException as e:
             raise exceptions.APIException(f"Failed to send message to Messenger: {e}")
         except Exception as e:
@@ -128,17 +127,19 @@ class ChannelSender:
                                 message_type: str):
         """
         Sends a message via Instagram Messaging API.
-        Assumption: The API is similar to Messenger's.
         """
         try:
-            # Assumption: A method exists to get Instagram-specific config, including the access token.
-            insta_config = self.repo.fetch_instagram_config(workspace_id, agent_id)
-            access_token = insta_config.get("access_token")
+            channel_data = self.repo.get_agent_channel(agent_id, "instagram")
+            config = channel_data.get("config", {})
+            token_ref = config.get("page_access_token_ref")
 
+            if not token_ref:
+                raise exceptions.ImproperlyConfigured(f"page_access_token_ref not configured for Instagram on agent {agent_id}")
+
+            access_token = os.getenv(token_ref)
             if not access_token:
-                raise exceptions.ImproperlyConfigured(f"Instagram Access Token not configured for agent {agent_id}")
+                raise exceptions.ImproperlyConfigured(f"Secret for token reference '{token_ref}' not found in environment.")
 
-            # Using the same endpoint as Messenger as per Meta's Graph API structure for Instagram
             instagram_api_url = "https://graph.facebook.com/v18.0/me/messages"
             
             headers = {
@@ -154,8 +155,8 @@ class ChannelSender:
             
             response = requests.post(instagram_api_url, headers=headers, json=payload, timeout=15)
             response.raise_for_status()
-        except SupabaseUnavailableError as e:
-            raise e # Re-raise to be handled by view
+        except (SupabaseUnavailableError, exceptions.NotFound, exceptions.ImproperlyConfigured) as e:
+            raise e
         except requests.exceptions.RequestException as e:
             raise exceptions.APIException(f"Failed to send message to Instagram: {e}")
         except Exception as e:

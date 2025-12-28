@@ -115,16 +115,23 @@ async function processMessage(messagingEvent: InstagramEvent, supabase) {
     const instagram_account_id = messagingEvent.recipient.id; // Your Business's Instagram Account ID
     
     // --- Find Workspace and Agent ID from Supabase ---
-    // A channel is uniquely identified by the provider and the provider-specific ID
     const { data: channelData, error: channelError } = await supabase
         .from('agent_channels')
         .select('agent_id, workspace_id')
-        .eq('provider', 'instagram')
-        .eq('provider_config', instagram_account_id) // Assumption: Instagram account ID is stored in provider_config
+        .eq('platform', 'instagram')
+        .eq('config->>ig_account_id', instagram_account_id)
+        .neq('status', 'disconnected')
+        .limit(1)
         .single();
-        
-    if (channelError || !channelData) {
-        throw new Error(`Channel config not found for Instagram account_id ${instagram_account_id}. Error: ${channelError?.message}`);
+
+    if (channelError) {
+        console.error(`Database error looking up channel for Instagram account_id ${instagram_account_id}:`, channelError.message);
+        return;
+    }
+
+    if (!channelData) {
+        console.warn(`Received message for unconfigured Instagram account_id ${instagram_account_id}. Ignoring.`);
+        return;
     }
     
     const { agent_id, workspace_id } = channelData;

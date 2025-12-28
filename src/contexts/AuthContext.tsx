@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 
@@ -11,6 +11,7 @@ interface AuthContextType {
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  refreshUserProfile: () => Promise<void>; // Added
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -20,6 +21,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Define refreshUserProfile as a stable callback
+  const refreshUserProfile = useCallback(async () => {
+    if (!user) {
+      console.warn("No user available to refresh profile.");
+      return;
+    }
+
+    if (!supabase || !isSupabaseConfigured) {
+        console.error("Supabase not configured, cannot refresh user profile.");
+        return;
+    }
+
+    try {
+        console.log("Attempting to fetch user profile for ID:", user.id); // Added log
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', user.id)
+            .single();
+
+        if (error) {
+            console.error("Error fetching user profile:", error, error.message); // Modified log
+            // If profile not found, create a default one
+            if (error.code === 'PGRST116' || error.message.includes('rows returned')) { // No rows found
+                console.info("User profile not found, attempting to create a default.");
+                const defaultDisplayName = user.email || 'New User';
+                const { error: insertError } = await supabase
+                    .from('profiles')
+                    .insert({ id: user.id, display_name: defaultDisplayName });
+
+                if (insertError) {
+                    console.error("Error creating default user profile:", insertError);
+                    return;
+                }
+                // Update local user state with the newly created profile data
+                setUser((currentUser) => {
+                    if (!currentUser) return null;
+                    return {
+                        ...currentUser,
+                        user_metadata: {
+                            ...currentUser.user_metadata,
+                            display_name: defaultDisplayName,
+                        },
+                    };
+                });
+            }
+            return;
+        }
+
+        if (profile) {
+            setUser((currentUser) => {
+                if (!currentUser) return null;
+                return {
+                    ...currentUser,
+                    user_metadata: {
+                        ...currentUser.user_metadata,
+                        display_name: profile.display_name,
+                    },
+                };
+            });
+        }
+    } catch (e) {
+        console.error("Unexpected error during profile refresh:", e);
+    }
+  }, [user, supabase, isSupabaseConfigured]); // Dependencies for useCallback
+
   useEffect(() => {
     if (!supabase || !isSupabaseConfigured) {
       setLoading(false);
@@ -28,22 +95,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        if (session?.user) {
+            await refreshUserProfile(); // Refresh profile after user is set
+        }
         setLoading(false);
       }
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (session?.user) {
+          await refreshUserProfile(); // Refresh profile after user is set
+      }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [refreshUserProfile]); // refreshUserProfile is now a stable dependency
 
   const signInWithEmail = async (email: string, password: string) => {
     if (!supabase || !isSupabaseConfigured) {
@@ -112,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithMagicLink,
         signInWithGoogle,
         signOut,
+        refreshUserProfile, // Expose refreshUserProfile
       }}
     >
       {children}

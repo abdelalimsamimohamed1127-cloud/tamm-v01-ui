@@ -103,6 +103,17 @@ class CopilotRuntime:
         context = self._parse_context(raw_context)
         
         try:
+            # Load workspace context: plan and credits
+            workspace_plan = self.repo.get_workspace_plan(self.workspace_id)
+            workspace_credits = self.repo.get_workspace_credits(self.workspace_id)
+            
+            # Decide if the user is on a paid plan based on workspace_plan
+            # Assuming 'free' is the slug for the free plan, and anything else is paid
+            is_paid_plan = workspace_plan not in ['free', None]
+            
+            # Instantiate CopilotPersona with the plan information
+            copilot_persona = CopilotPersona(is_paid_plan=is_paid_plan)
+
             analytics_data = self.repo.get_overview_metrics(
                 workspace_id=self.workspace_id,
                 start_date=context['start_date'],
@@ -111,10 +122,16 @@ class CopilotRuntime:
                 channel=context['channel']
             )
 
-            data_summary_for_ai = CopilotPersona.format_analytics_for_ai(analytics_data, context)
+            data_summary_for_ai = copilot_persona.format_analytics_for_ai(analytics_data, context)
             
-            system_prompt = CopilotPersona.get_system_prompt()
-            user_query = f"Based on the provided analytics data, please answer the question: '{question}'\n\nAnalytics Data Summary:\n{data_summary_for_ai}"
+            system_prompt = copilot_persona.get_system_prompt()
+            # If it's a free plan and analytics summarization is not allowed,
+            # we should not include analytics data in the user_query.
+            if not is_paid_plan:
+                 # The persona already handles this by returning a generic string in format_analytics_for_ai
+                user_query = f"Please answer the question: '{question}'"
+            else:
+                user_query = f"Based on the provided analytics data, please answer the question: '{question}'\n\nAnalytics Data Summary:\n{data_summary_for_ai}"
 
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -137,6 +154,17 @@ class CopilotRuntime:
                 insight_json = json.loads(insight_raw)
 
                 openai_circuit_breaker.record_success()
+
+                # Log LLM token usage
+                if response.usage:
+                    self.repo.log_copilot_usage_event(
+                        workspace_id=self.workspace_id,
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
+                        model=response.model,
+                        cost_usd=0.0, # Placeholder for now, actual cost calculation needs to be implemented
+                        details={"question": question, "response_type": "copilot_chat"}
+                    )
 
                 db_executor.submit(self.repo.store_insight, {
                     "workspace_id": self.workspace_id,

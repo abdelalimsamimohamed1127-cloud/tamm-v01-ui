@@ -6,7 +6,11 @@ from typing import Dict, Any
 from django.conf import settings
 from rest_framework import exceptions
 
-from analytics.supabase_repo import MessageEnrichmentSupabaseRepo
+from analytics.supabase_repo import AnalyticsSupabaseRepo # Use the main AnalyticsSupabaseRepo
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- AI Client Initialization ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", settings.OPENAI_API_KEY)
@@ -15,24 +19,25 @@ if not OPENAI_API_KEY:
 
 class MessageEnrichment:
     """
-    Handles AI-powered message intelligence extraction (topic, intent, sentiment).
+    Handles AI-powered message intelligence extraction (topic, sentiment, urgency).
     """
     def __init__(self, user_jwt: str):
         self.openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        self.analytics_repo = MessageEnrichmentSupabaseRepo(user_jwt)
+        self.analytics_repo = AnalyticsSupabaseRepo(user_jwt) # Use the main repo
 
-    def enrich_message(self, message_id: uuid.UUID, message_content: str, workspace_id: uuid.UUID, agent_id: uuid.UUID):
+    def enrich_message(self, conversation_id: uuid.UUID, message_content: str, workspace_id: uuid.UUID, agent_id: uuid.UUID):
         """
-        Sends message content to an AI model for enrichment and persists the results.
+        Sends message content to an AI model for enrichment and updates the conversation.
         """
         try:
             # Craft a prompt for the AI model to extract required intelligence
             prompt_messages = [
-                {"role": "system", "content": """You are an expert AI assistant designed to extract key intelligence from messages. 
-                 For each message, identify the primary topic, the user's intent, and the sentiment.
-                 Output in JSON format with keys: "topic", "intent", "sentiment" (Positive, Neutral, Negative), and "entities" (list of key entities).
-                 Example: {"topic": "Product Inquiry", "intent": "Ask for details", "sentiment": "Neutral", "entities": ["product X", "price"]}
+                {"role": "system", "content": """You are an expert AI assistant designed to extract key intelligence from a single message within a conversation.
+                 For this message, identify the primary topic, the overall sentiment (Positive, Neutral, Negative), and the urgency (Low, Medium, High).
+                 Output in JSON format with keys: "topic", "sentiment", "urgency".
+                 Example: {"topic": "Refund Inquiry", "sentiment": "Negative", "urgency": "High"}
                  Ensure sentiment is one of: Positive, Neutral, Negative.
+                 Ensure urgency is one of: Low, Medium, High.
                  """},
                 {"role": "user", "content": f"Analyze the following message:\n\n'{message_content}'"}
             ]
@@ -49,25 +54,21 @@ class MessageEnrichment:
 
             # Extract fields, providing defaults to prevent errors if AI fails to adhere to format
             topic = enrichment_data.get("topic", "unknown")
-            intent = enrichment_data.get("intent", "unknown")
             sentiment = enrichment_data.get("sentiment", "Neutral")
-            entities = enrichment_data.get("entities", [])
+            urgency = enrichment_data.get("urgency", "Low")
 
-            # Persist enrichment data
-            self.analytics_repo.persist_message_enrichment({
-                "message_id": message_id,
-                "workspace_id": workspace_id,
-                "agent_id": agent_id,
-                "topic": topic,
-                "intent": intent,
-                "sentiment": sentiment,
-                "entities": entities,
-            })
+            # Persist enrichment data to the conversations table
+            self.analytics_repo.update_conversation_enrichment(
+                conversation_id=conversation_id,
+                sentiment=sentiment,
+                topic=topic,
+                urgency=urgency,
+            )
 
         except openai.APIError as e:
-            print(f"AI provider error during message enrichment: {e}")
-            # Consider logging this failure without raising, as it's a background process
+            logger.error(f"AI provider error during message enrichment for conversation {conversation_id}: {e}", exc_info=True)
         except json.JSONDecodeError as e:
-            print(f"Failed to parse AI response JSON for message enrichment: {e}")
+            logger.error(f"Failed to parse AI response JSON for message enrichment for conversation {conversation_id}: {e}", exc_info=True)
         except Exception as e:
-            print(f"Unexpected error during message enrichment: {e}")
+            logger.error(f"Unexpected error during message enrichment for conversation {conversation_id}: {e}", exc_info=True)
+

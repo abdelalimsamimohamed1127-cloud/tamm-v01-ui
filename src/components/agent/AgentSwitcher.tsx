@@ -1,6 +1,6 @@
 // src/components/agent/AgentSwitcher.tsx
 import * as React from "react"
-import { ChevronsUpDown, PlusCircle, Search } from "lucide-react" // Import Search icon
+import { ChevronsUpDown, PlusCircle, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -13,17 +13,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAgents } from "@/contexts/AgentContext"
-import { useWorkspaces } from "@/contexts/WorkspaceContext"
-import { Input } from "@/components/ui/input" // Import Input component
+import { useAgent } from "@/hooks/useAgent" // Correct hook import
+import { useWorkspace } from "@/hooks" // Correct hook import
+import { Input } from "@/components/ui/input"
 
 interface AgentSwitcherProps {
   onCreateAgentClick: () => void;
 }
 
-export function AgentSwitcher({ onCreateAgentClick }: AgentSwitcherProps) { // Accept prop
-  const { workspaceId } = useWorkspaces()
-  const { activeAgent, agents, setAgent, isLoading } = useAgents()
+export function AgentSwitcher({ onCreateAgentClick }: AgentSwitcherProps) {
+  const { workspaceId } = useWorkspace() // Corrected hook usage
+  const { activeAgent, agents, setAgent, isLoading } = useAgent() // Corrected hook usage
   const [searchTerm, setSearchTerm] = React.useState("")
 
   const filteredAgents = agents.filter(agent =>

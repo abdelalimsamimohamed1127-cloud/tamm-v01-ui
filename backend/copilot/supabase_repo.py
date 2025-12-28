@@ -3,10 +3,11 @@ import uuid
 from supabase import create_client, Client
 from django.conf import settings
 from rest_framework import exceptions
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import datetime
 
 from core.errors import SupabaseUnavailableError
+from agents.supabase_repo import AgentSupabaseRepo # Import AgentSupabaseRepo
 
 class CopilotSupabaseRepo:
     """
@@ -15,6 +16,7 @@ class CopilotSupabaseRepo:
     def __init__(self, user_jwt: str):
         self._client: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"),
                                             options={"headers": {"Authorization": f"Bearer {user_jwt}"}})
+        self._agent_repo = AgentSupabaseRepo(user_jwt) # Initialize AgentSupabaseRepo
 
     def _get_view(self, view_name: str):
         return self._client.from_(view_name)
@@ -135,6 +137,34 @@ class CopilotSupabaseRepo:
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to fetch breakdown data for Copilot: {e}")
     
+    def get_workspace_plan(self, workspace_id: uuid.UUID) -> Optional[str]:
+        """
+        Fetches the workspace's current plan slug.
+        """
+        try:
+            response = self._client.from_("workspace_settings").select("plan_slug").eq("workspace_id", str(workspace_id)).single().execute()
+            if response.data:
+                return response.data.get("plan_slug")
+            return None
+        except Exception as e:
+            # Log the error but return None to allow Copilot to function with default assumptions
+            print(f"Warning: Failed to fetch workspace plan for {workspace_id}: {e}")
+            return None
+
+    def get_workspace_credits(self, workspace_id: uuid.UUID) -> int:
+        """
+        Fetches the workspace's available credits.
+        """
+        try:
+            response = self._client.from_("workspace_wallets").select("credits_available").eq("workspace_id", str(workspace_id)).single().execute()
+            if response.data:
+                return response.data.get("credits_available", 0)
+            return 0
+        except Exception as e:
+            # Log the error but return 0 to allow Copilot to function with default assumptions
+            print(f"Warning: Failed to fetch workspace credits for {workspace_id}: {e}")
+            return 0
+
     def _get_avg_response_time(self, data: List[Dict]) -> float:
         """Helper to calculate average response time from daily summary data."""
         # This is a simplified calculation. Real avg response time would be in the view.
@@ -150,7 +180,7 @@ class CopilotSupabaseRepo:
             response = self._client.table("analytics_insights").insert({
                 "id": str(uuid.uuid4()),
                 "workspace_id": str(insight_data["workspace_id"]),
-                "agent_id": str(insight_data.get("agent_id")),
+                "agent_id": str(insight_data.get("agent_id")), # Agent ID might be None for Copilot directly
                 "summary_text": insight_data["summary_text"],
                 "context": insight_data.get("context", {}),
             }).execute()
@@ -158,3 +188,19 @@ class CopilotSupabaseRepo:
                 raise SupabaseUnavailableError("Failed to store insight.")
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to store Copilot insight in Supabase: {e}")
+
+    def log_copilot_usage_event(self, workspace_id: uuid.UUID, input_tokens: int, output_tokens: int, model: str, cost_usd: float, details: Optional[Dict] = None):
+        """
+        Logs a usage event for the Copilot's LLM interactions.
+        Uses the more detailed logging from agents' supabase repo.
+        """
+        self._agent_repo.log_usage_event(
+            workspace_id=workspace_id,
+            event_type="copilot_tokens",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model=model,
+            cost_usd=cost_usd,
+            details=details,
+            agent_id=None, # Copilot is not tied to a specific agent
+        )

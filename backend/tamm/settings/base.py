@@ -51,8 +51,9 @@ INSTALLED_APPS = [
     'billing', # Our billing application
     'copilot', # Our copilot application
     'integrations', # Our integrations application
-    'external_api', # Our external API application
+    'external_api', # Our external API application -- NEW
     'webchat', # Our new webchat application
+    'backend.automations.apps.AutomationsConfig', # Our automations application
 ]
 
 MIDDLEWARE = [
@@ -62,13 +63,14 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    # 'django.middleware.csrf.CsrfViewMiddleware', # Disabling CSRF for API-only approach with JWT
+    # 'django.middleware.csrf.CsrfViewViewMiddleware', # Disabling CSRF for API-only approach with JWT
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.WorkspaceContextMiddleware', # Our custom middleware for workspace context
+    'backend.billing.middleware.RateLimitMiddleware', # Our custom middleware for workspace rate limiting
     'billing.middleware.BillingMiddleware', # Our custom middleware for billing enforcement
-    'external_api.middleware.ExternalAPIMiddleware', # Custom middleware for API Key context
+    'backend.external_api.middleware.ExternalApiAuthMiddleware', # Custom middleware for API Key context -- NEW
 ]
 
 ROOT_URLCONF = 'tamm.urls'
@@ -159,7 +161,7 @@ SUPABASE_JWT_ISS = os.getenv("SUPABASE_JWT_ISS", "https://YOUR_SUPABASE_PROJECT_
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'core.auth.SupabaseJWTAuthentication',
-        'external_api.auth.WorkspaceAPIKeyAuthentication', # New API Key authentication
+        # 'external_api.auth.WorkspaceAPIKeyAuthentication', # Removed, middleware handles API Key auth
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated', # Base permission
@@ -168,7 +170,17 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
     ],
     'EXCEPTION_HANDLER': 'core.errors.custom_exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'copilot.throttles.CopilotChatThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'copilot_chat': '20/minute', # Default rate for Copilot chat endpoint
+    },
 }
 
+# CORS settings
 CORS_ALLOW_ALL_ORIGINS = True # WARNING: This is insecure for production. Lock this down in prod.py
+
+# Redis URL for caching and rate limiting
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

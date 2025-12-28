@@ -1,89 +1,48 @@
-from django.conf import settings
-from rest_framework import exceptions
-from django.utils.deprecation import MiddlewareMixin
-import uuid
-from typing import Callable, Optional
-
-from billing.credits import CreditEnforcer
-from billing.rate_limit import RateLimiter
-
 import logging
+from django.http import HttpResponse, JsonResponse
+from django.conf import settings
+from backend.billing.rate_limit import increment_and_check, get_rate_limit
 
 logger = logging.getLogger(__name__)
 
-class BillingMiddleware(MiddlewareMixin):
-    """
-    Middleware to enforce rate limits and credit deductions for specific API endpoints.
-    """
-    RATE_LIMIT_CONFIG = {
-        "/api/v1/ai/chat": {"requests_per_minute": 60},
-        "/api/v1/analytics/insights": {"requests_per_minute": 10},
-        "/api/v1/channels/event": {"requests_per_minute": 120},
-        "/api/v1/copilot/insights/chat": {"requests_per_minute": 10},
-        "/api/v1/integrations/ingest": {"requests_per_minute": 30},
-        "/api/v1/external/agent/run": {"requests_per_minute": 30},
-        "/api/v1/external/events": {"requests_per_minute": 100},
-        "/api/v1/external/data/ingest": {"requests_per_minute": 20},
-    }
-
-    def __init__(self, get_response: Callable):
+class RateLimitMiddleware:
+    def __init__(self, get_response):
         self.get_response = get_response
-        self.rate_limiters: Dict[str, RateLimiter] = {}
-        for endpoint, config in self.RATE_LIMIT_CONFIG.items():
-            self.rate_limiters[endpoint] = RateLimiter(requests_per_minute=config["requests_per_minute"])
+        logger.info("RateLimitMiddleware initialized.")
 
-    def process_view(self, request, view_func, view_args, view_kwargs):
-        if not hasattr(request, 'user_id') or not hasattr(request, 'workspace_id'):
-            return None
+    def __call__(self, request):
+        # We assume workspace_id is resolved and attached to the request
+        # by an earlier middleware or process.
+        workspace_id = getattr(request, 'workspace_id', None)
+        
+        if not workspace_id:
+            logger.warning("No workspace_id found on request. Skipping rate limiting.")
+            return self.get_response(request)
 
-        workspace_id = request.workspace_id
-        user_jwt = request.auth
-        path = request.path_info
+        # Assuming workspace_settings is also attached to the request
+        # If not, you might need to fetch it from the DB here or rely on a default plan.
+        # For this task, we assume it's available or default to "free".
+        plan_key = getattr(request, 'plan_key', None) # Assuming plan_key might be directly on request from earlier middleware
+        if not plan_key:
+            workspace_settings = getattr(request, 'workspace_settings', None)
+            if workspace_settings and hasattr(workspace_settings, 'plan_key'):
+                plan_key = workspace_settings.plan_key
+            else:
+                plan_key = "free" # Default to free if plan_key is not found or settings are missing
+                logger.debug(f"Plan key not found for workspace {workspace_id}. Defaulting to '{plan_key}'.")
 
-        rate_limiter_key: Optional[str] = None
-        for endpoint_prefix in self.RATE_LIMIT_CONFIG.keys():
-            if path.startswith(endpoint_prefix):
-                rate_limiter_key = endpoint_prefix
-                break
+        result = increment_and_check(str(workspace_id), plan_key)
 
-        if rate_limiter_key:
-            rate_limiter = self.rate_limiters[rate_limiter_key]
-            try:
-                rate_limiter.check_and_apply_rate_limit(workspace_id, rate_limiter_key)
-            except exceptions.Throttled as e:
-                logger.warning(
-                    "Rate limit exceeded",
-                    extra={"workspace_id": workspace_id, "path": path},
-                )
-                raise e
+        if not result["allowed"]:
+            logger.warning(
+                f"Rate limit exceeded for workspace {workspace_id} (Plan: {plan_key}). "
+                f"Count: {result['current_count']}, Limit: {get_rate_limit(plan_key)['limit']}"
+            )
+            response = JsonResponse(
+                {"status": 429, "message": "Rate limit exceeded for workspace"},
+                status=429,
+            )
+            response["Retry-After"] = result["retry_after"]
+            return response
 
-        if path.startswith("/api/v1/ai/chat") and request.method == 'POST':
-            if not user_jwt:
-                raise exceptions.AuthenticationFailed("JWT missing for credit enforcement.")
-            
-            try:
-                credit_enforcer = CreditEnforcer(user_jwt)
-                credit_enforcer.check_and_deduct_ai_credit(
-                    workspace_id=workspace_id, 
-                    agent_id=None,
-                    channel=None
-                )
-                logger.info(
-                    "AI credit deducted",
-                    extra={"workspace_id": workspace_id},
-                )
-            except exceptions.PaymentRequired as e:
-                logger.warning(
-                    "Insufficient credits for AI chat",
-                    extra={"workspace_id": workspace_id},
-                )
-                raise e
-            except Exception as e:
-                logger.error(
-                    "Error during credit enforcement",
-                    extra={"workspace_id": workspace_id, "error": str(e)},
-                    exc_info=True,
-                )
-                raise exceptions.APIException("Could not process credit deduction.")
-
-        return None
+        return self.get_response(request)

@@ -1,27 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type LowConfidenceItem = {
+export type LowConfidenceTrace = {
   id: string;
-  sessionId?: string | null;
-  conversationId?: string | null;
-  messageId?: string | null;
-  userQuery?: string | null;
-  aiResponse?: string | null;
-  confidence?: number | null;
-  createdAt?: string | null;
-  chunks?: unknown;
-  citations?: unknown;
-};
-
-export type FeedbackItem = {
-  id: string;
-  aiMessage?: string | null;
-  aiMessageId?: string | null;
-  userMessage?: string | null;
-  sessionId?: string | null;
-  conversationId?: string | null;
-  comment?: string | null;
-  createdAt?: string | null;
+  workspace_id: string;
+  agent_id: string | null;
+  session_id: string;
+  confidence_score: number | null;
+  reason: string | null;
+  created_at: string;
 };
 
 export type SessionMessage = {
@@ -32,123 +18,70 @@ export type SessionMessage = {
   created_at?: string | null;
 };
 
-function normalizeConfidence(row: any): number | null {
-  const confidenceScore = row?.confidence_score ?? row?.confidence;
-  const numericValue = typeof confidenceScore === "string" ? Number(confidenceScore) : confidenceScore;
-  return Number.isFinite(numericValue) ? Number(numericValue) : null;
-}
+export type FeedbackPayload = {
+  workspace_id: string;
+  trace_id: string;
+  rating: 'good' | 'bad';
+  comment?: string | null;
+};
 
-export async function fetchLowConfidenceItems(): Promise<LowConfidenceItem[]> {
+export async function submitFeedback(payload: FeedbackPayload) {
   try {
     const { data, error } = await supabase
-      .from("rag_traces")
-      .select("*")
+      .from("message_feedback")
+      .insert({
+        workspace_id: payload.workspace_id,
+        trace_id: payload.trace_id,
+        rating: payload.rating,
+        comment: payload.comment || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Failed to submit feedback", error);
+    throw error;
+  }
+}
+
+export async function getLowConfidenceTraces(workspace_id: string): Promise<LowConfidenceTrace[]> {
+  try {
+    const { data, error } = await supabase
+      .from("low_confidence_traces")
+      .select("id, workspace_id, agent_id, session_id, confidence_score, reason, created_at")
+      .eq("workspace_id", workspace_id)
       .order("created_at", { ascending: false })
       .limit(50);
 
     if (error) throw error;
 
-    const items = (data ?? []).map((row: any) => ({
+    const traces = (data ?? []).map((row: any) => ({
       id: row.id,
-      sessionId: row.session_id ?? row.conversation_id ?? null,
-      conversationId: row.conversation_id ?? null,
-      messageId: row.message_id ?? null,
-      userQuery: row.user_query ?? row.query_text ?? row.rewritten_query ?? "",
-      aiResponse: row.ai_response ?? row.rewritten_query ?? null,
-      confidence: normalizeConfidence(row),
-      createdAt: row.created_at ?? null,
-      chunks: row.chunks ?? null,
-      citations: row.citations ?? null,
-    } as LowConfidenceItem));
+      workspace_id: row.workspace_id,
+      agent_id: row.agent_id,
+      session_id: row.session_id,
+      confidence_score: row.confidence_score,
+      reason: row.reason,
+      created_at: row.created_at,
+    } as LowConfidenceTrace));
 
-    const prioritized = items.filter((item) => typeof item.confidence === "number" && item.confidence < 0.6);
-
-    return prioritized.length > 0 ? prioritized : items;
+    return traces;
   } catch (error) {
     console.warn("Failed to fetch low confidence traces", error);
     return [];
   }
 }
 
-export async function fetchNegativeFeedbackItems(): Promise<FeedbackItem[]> {
-  try {
-    const { data: feedbackRows, error } = await supabase
-      .from("message_feedback")
-      .select("*")
-      .eq("rating", -1)
-      .order("created_at", { ascending: false })
-      .limit(30);
-
-    if (error) throw error;
-
-    const feedback = feedbackRows ?? [];
-    const messageIds = feedback
-      .map((row: any) => row.message_id)
-      .filter((id: unknown): id is string => typeof id === "string");
-
-    let messages: SessionMessage[] = [];
-
-    if (messageIds.length > 0) {
-      const { data: messageRows, error: messageError } = await supabase
-        .from("chat_messages")
-        .select("id, session_id, role, content, created_at")
-        .in("id", messageIds);
-
-      if (!messageError && messageRows) {
-        messages = messageRows as SessionMessage[];
-      }
-    }
-
-    const messageById = new Map(messages.map((message) => [message.id, message]));
-
-    const enriched = await Promise.all(
-      feedback.map(async (row: any) => {
-        const aiMessage = row.message_id ? messageById.get(row.message_id) ?? null : null;
-        let userMessage: SessionMessage | null = null;
-
-        if (aiMessage?.session_id && aiMessage?.created_at) {
-          const { data: contextRows, error: contextError } = await supabase
-            .from("chat_messages")
-            .select("id, session_id, role, content, created_at")
-            .eq("session_id", aiMessage.session_id)
-            .lte("created_at", aiMessage.created_at)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (!contextError && contextRows) {
-            userMessage = (contextRows as SessionMessage[]).find(
-              (message) => message.role === "user" && message.id !== aiMessage.id,
-            ) ?? null;
-          }
-        }
-
-        return {
-          id: row.id,
-          aiMessageId: row.message_id ?? null,
-          aiMessage: aiMessage?.content ?? null,
-          userMessage: userMessage?.content ?? null,
-          sessionId: aiMessage?.session_id ?? null,
-          conversationId: row.conversation_id ?? null,
-          comment: row.comment ?? null,
-          createdAt: row.created_at ?? null,
-        } satisfies FeedbackItem;
-      }),
-    );
-
-    return enriched;
-  } catch (error) {
-    console.warn("Failed to fetch negative feedback", error);
-    return [];
-  }
-}
-
-export async function fetchSessionMessages(sessionId: string): Promise<SessionMessage[]> {
+export async function getSessionMessages(workspace_id: string, sessionId: string): Promise<SessionMessage[]> {
   if (!sessionId) return [];
 
   try {
     const { data, error } = await supabase
       .from("chat_messages")
       .select("id, session_id, role, content, created_at")
+      .eq("workspace_id", workspace_id) // Add workspace_id filter
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -159,5 +92,23 @@ export async function fetchSessionMessages(sessionId: string): Promise<SessionMe
   } catch (error) {
     console.warn("Failed to fetch session messages", error);
     return [];
+  }
+}
+
+export async function checkFeedbackExists(workspace_id: string, trace_id: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("message_feedback")
+      .select("id")
+      .eq("workspace_id", workspace_id)
+      .eq("trace_id", trace_id)
+      .limit(1);
+
+    if (error) throw error;
+
+    return (data?.length ?? 0) > 0;
+  } catch (error) {
+    console.error("Failed to check for existing feedback", error);
+    throw error;
   }
 }

@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from django.conf import settings
 from rest_framework import exceptions
 from typing import Dict, Any, Optional, List
+import datetime
 
 from core.errors import SupabaseUnavailableError
 
@@ -19,20 +20,41 @@ class IntegrationsSupabaseRepo:
     def _get_table(self, table_name: str):
         return self._client.table(table_name)
 
+    def list_connectors(self, workspace_id: uuid.UUID) -> List[Dict[str, Any]]:
+        """
+        Fetches all connectors for a given workspace.
+        """
+        try:
+            response = self._get_table("connectors").select("*").eq("workspace_id", str(workspace_id)).execute()
+            return response.data if response.data else []
+        except Exception as e:
+            raise SupabaseUnavailableError(detail=f"Failed to list connectors: {e}")
+
     def create_connector(self, workspace_id: uuid.UUID, connector_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Creates a new connector configuration in Supabase.
+        Initializes status to 'inactive' and last_sync_at to None.
+        The 'config' field will store non-sensitive wizard-collected fields.
         """
         try:
             connector_id = uuid.uuid4()
+            # Construct config with non-sensitive fields
+            config_payload = {
+                "domain": connector_data.get("domain", "other"),
+                "auth_type": connector_data.get("auth_type", "api_key"),
+                "sync_mode": connector_data.get("sync_mode", "manual"),
+                # Add any other non-sensitive fields collected by the wizard to config
+            }
+
             payload = {
                 "id": str(connector_id),
                 "workspace_id": str(workspace_id),
-                "connector_type": connector_data["connector_type"],
-                "domain": connector_data["domain"],
-                "auth_type": connector_data["auth_type"],
-                "sync_mode": connector_data["sync_mode"],
-                "config": connector_data.get("config", {})
+                "type": connector_data["type"], # Use 'type' as per data model
+                "name": connector_data["name"],
+                "config": config_payload,
+                "status": "inactive", # Default status
+                "last_sync_at": None,
+                "created_at": datetime.datetime.now().isoformat(),
             }
             response = self._get_table("connectors").insert(payload).execute()
             if response.data:
@@ -54,6 +76,24 @@ class IntegrationsSupabaseRepo:
             raise
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to get connector: {e}")
+    
+    def update_connector_status(self, connector_id: uuid.UUID, workspace_id: uuid.UUID, status: str, last_sync_at: Optional[datetime.datetime] = None) -> Dict[str, Any]:
+        """
+        Updates the status and last_sync_at for a connector.
+        """
+        try:
+            update_data = {"status": status}
+            if last_sync_at:
+                update_data["last_sync_at"] = last_sync_at.isoformat()
+            else:
+                update_data["last_sync_at"] = None # Explicitly set to null if not provided
+
+            response = self._get_table("connectors").update(update_data).eq("id", str(connector_id)).eq("workspace_id", str(workspace_id)).execute()
+            if response.data:
+                return response.data[0]
+            raise SupabaseUnavailableError("Failed to update connector status.")
+        except Exception as e:
+            raise SupabaseUnavailableError(detail=f"Failed to update connector status: {e}")
 
     def store_canonical_data(self, entity_type: str, records: List[Dict[str, Any]]):
         """

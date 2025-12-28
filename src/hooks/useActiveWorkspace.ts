@@ -7,6 +7,10 @@ export interface Workspace {
   owner_id: string;
 }
 
+export function useWorkspace() {
+  return useActiveWorkspace();
+}
+
 export function useActiveWorkspace() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,3 +70,4 @@ export function useActiveWorkspace() {
 
   return { workspace, isLoading, error };
 }
+

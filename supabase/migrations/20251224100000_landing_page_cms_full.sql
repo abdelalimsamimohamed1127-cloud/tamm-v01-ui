@@ -73,7 +73,7 @@ CREATE POLICY "Allow admin full access on landing_section_items" ON landing_sect
 
 
 -- 5. Triggers for updated_at
-DROP FUNCTION IF EXISTS handle_updated_at();
+
 CREATE OR REPLACE FUNCTION handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN

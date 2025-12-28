@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { AlertTriangle, MessageCircle } from "lucide-react";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { AlertTriangle, ThumbsDown, ThumbsUp } from "lucide-react";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,26 +13,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  fetchLowConfidenceItems,
-  fetchNegativeFeedbackItems,
-  fetchSessionMessages,
-  type FeedbackItem,
-  type LowConfidenceItem,
+  getLowConfidenceTraces,
+  getSessionMessages,
+  submitFeedback,
+  checkFeedbackExists,
+  type LowConfidenceTrace,
   type SessionMessage,
 } from "@/services/evals";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspace } from "@/hooks";
 
 function scoreBadgeClass(score: number | null | undefined) {
   if (typeof score !== "number") return "";
@@ -49,24 +47,6 @@ function formatScore(score: number | null | undefined) {
 function relativeTime(timestamp?: string | null) {
   if (!timestamp) return "";
   return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
-}
-
-function parseContextChunks(raw: unknown) {
-  if (!raw) return [] as any[];
-  const input = typeof raw === "string" ? (() => {
-    try {
-      return JSON.parse(raw);
-    } catch (_err) {
-      return null;
-    }
-  })() : raw;
-
-  if (Array.isArray(input)) return input;
-  if (input && typeof input === "object" && "chunks" in (input as Record<string, unknown>)) {
-    const chunks = (input as { chunks?: unknown }).chunks;
-    return Array.isArray(chunks) ? chunks : [];
-  }
-  return [] as any[];
 }
 
 function ConversationMessages({
@@ -114,46 +94,14 @@ function ConversationMessages({
   );
 }
 
-function ContextChunks({ rawChunks }: { rawChunks: unknown }) {
-  const chunks = parseContextChunks(rawChunks);
-
-  if (!chunks.length) {
-    return <p className="text-sm text-muted-foreground">No retrieved context available.</p>;
-  }
-
-  return (
-    <Accordion type="multiple" className="w-full space-y-2">
-      {chunks.map((chunk, index) => {
-        const value = typeof chunk === "object" && chunk !== null ? (chunk as Record<string, any>) : {};
-        const title = value.title || value.source || `Chunk ${index + 1}`;
-        const content = value.content || value.text || JSON.stringify(chunk, null, 2);
-
-        return (
-          <AccordionItem key={index} value={`chunk-${index}`}>
-            <AccordionTrigger className="text-left text-sm font-medium">{title}</AccordionTrigger>
-            <AccordionContent>
-              <div className="rounded-md border bg-muted/50 p-3 text-sm">
-                {value.source && (
-                  <div className="mb-2 text-xs text-muted-foreground">Source: {value.source}</div>
-                )}
-                <p className="whitespace-pre-wrap leading-relaxed">{content}</p>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        );
-      })}
-    </Accordion>
-  );
-}
-
 function LowConfidenceTable({
   data,
   isLoading,
   onInspect,
 }: {
-  data: LowConfidenceItem[];
+  data: LowConfidenceTrace[];
   isLoading: boolean;
-  onInspect: (item: LowConfidenceItem) => void;
+  onInspect: (item: LowConfidenceTrace) => void;
 }) {
   if (isLoading) {
     return (
@@ -176,7 +124,7 @@ function LowConfidenceTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Query</TableHead>
+            <TableHead>Reason</TableHead>
             <TableHead className="w-[120px] text-center">Score</TableHead>
             <TableHead className="w-[160px]">Date</TableHead>
             <TableHead className="w-[120px] text-right">Action</TableHead>
@@ -187,13 +135,13 @@ function LowConfidenceTable({
             <TableRow key={item.id}>
               <TableCell>
                 <div className="line-clamp-2 text-sm leading-relaxed text-foreground">
-                  {item.userQuery || "(no query)"}
+                  {item.reason || "(no reason provided)"}
                 </div>
               </TableCell>
               <TableCell className="text-center">
-                <Badge className={cn("px-2", scoreBadgeClass(item.confidence))}>{formatScore(item.confidence)}</Badge>
+                <Badge className={cn("px-2", scoreBadgeClass(item.confidence_score))}>{formatScore(item.confidence_score)}</Badge>
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">{relativeTime(item.createdAt)}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{relativeTime(item.created_at)}</TableCell>
               <TableCell className="text-right">
                 <Button variant="outline" size="sm" onClick={() => onInspect(item)}>
                   Inspect
@@ -207,70 +155,25 @@ function LowConfidenceTable({
   );
 }
 
-function NegativeFeedbackList({ data, isLoading }: { data: FeedbackItem[]; isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[...Array(3)].map((_, index) => (
-          <div key={index} className="space-y-2 rounded-md border p-4">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (!data.length) {
-    return <p className="text-sm text-muted-foreground">No negative feedback yet.</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {data.map((item) => (
-        <div key={item.id} className="space-y-3 rounded-md border p-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <MessageCircle className="h-4 w-4" />
-            <span>{relativeTime(item.createdAt)}</span>
-            {item.comment && <span className="truncate">· {item.comment}</span>}
-          </div>
-          {item.userMessage && (
-            <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">User</div>
-              <div className="rounded-md border bg-muted/40 p-3 text-sm leading-relaxed">
-                {item.userMessage}
-              </div>
-            </div>
-          )}
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">AI Reply</div>
-            <div className="rounded-md border bg-muted p-3 text-sm leading-relaxed">
-              {item.aiMessage ?? "Message unavailable"}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function EvalsContent() {
   const { toast } = useToast();
-  const [selectedTrace, setSelectedTrace] = useState<LowConfidenceItem | null>(null);
+  const queryClient = useQueryClient();
+  const { auth } = useAuth();
+  const { workspace } = useWorkspace();
+
+  const [selectedTrace, setSelectedTrace] = useState<LowConfidenceTrace | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState<"good" | "bad" | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
 
   const { data: lowConfidenceData = [], isLoading: isLoadingLowConfidence } = useQuery({
-    queryKey: ["evals", "low-confidence"],
-    queryFn: fetchLowConfidenceItems,
-  });
-
-  const { data: negativeFeedback = [], isLoading: isLoadingFeedback } = useQuery({
-    queryKey: ["evals", "negative-feedback"],
-    queryFn: fetchNegativeFeedbackItems,
+    queryKey: ["evals", "low-confidence", workspace?.id],
+    queryFn: () => getLowConfidenceTraces(workspace!.id),
+    enabled: Boolean(workspace?.id && auth?.token),
   });
 
   const sessionIdForInspector = useMemo(
-    () => selectedTrace?.sessionId || selectedTrace?.conversationId || null,
+    () => selectedTrace?.session_id || null,
     [selectedTrace],
   );
 
@@ -278,38 +181,85 @@ function EvalsContent() {
     data: sessionMessages = [],
     isLoading: isLoadingMessages,
   } = useQuery({
-    queryKey: ["evals", "session-messages", sessionIdForInspector],
-    queryFn: () => (sessionIdForInspector ? fetchSessionMessages(sessionIdForInspector) : Promise.resolve([])),
-    enabled: Boolean(sessionIdForInspector && selectedTrace),
+    queryKey: ["evals", "session-messages", workspace?.id, sessionIdForInspector],
+    queryFn: () => getSessionMessages(workspace!.id, sessionIdForInspector!),
+    enabled: Boolean(sessionIdForInspector && workspace?.id && auth?.token),
   });
 
-  const handleAddToKnowledgeBase = () => {
-    toast({ title: "Coming soon", description: "Add to Knowledge Base will be available soon." });
-  };
+  const { data: feedbackAlreadySubmitted = false, isLoading: isLoadingFeedbackStatus } = useQuery({
+    queryKey: ["evals", "feedback-status", selectedTrace?.id],
+    queryFn: () => checkFeedbackExists(workspace!.id, selectedTrace!.id),
+    enabled: Boolean(selectedTrace?.id && workspace?.id && auth?.token),
+  });
+
+  const handleSubmitFeedback = useCallback(async () => {
+    if (!selectedTrace || !workspace?.id || !auth?.token || !feedbackRating) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a rating.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    try {
+      await submitFeedback({
+        workspace_id: workspace.id,
+        trace_id: selectedTrace.id,
+        rating: feedbackRating,
+        comment: feedbackComment.trim() || null,
+      });
+
+      toast({
+        title: "Feedback Submitted",
+        description: "Your feedback has been recorded.",
+      });
+      setFeedbackRating(null);
+      setFeedbackComment("");
+      // Invalidate query to refetch feedback status for this trace
+      await queryClient.invalidateQueries({ queryKey: ["evals", "feedback-status", selectedTrace.id] });
+    } catch (error: any) {
+      toast({
+        title: "Error Submitting Feedback",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+      console.error("Error submitting feedback:", error);
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  }, [selectedTrace, workspace?.id, auth?.token, feedbackRating, feedbackComment, queryClient, toast]);
+
+  // Reset feedback form when selectedTrace changes
+  useEffect(() => {
+    setFeedbackRating(null);
+    setFeedbackComment("");
+  }, [selectedTrace]);
+
+  const handleInspectTrace = useCallback((trace: LowConfidenceTrace) => {
+    setSelectedTrace(trace);
+  }, []);
 
   return (
     <div className="space-y-6 p-4">
       <div className="space-y-1">
         <h1 className="text-2xl font-bold">Evals Inspector</h1>
         <p className="text-sm text-muted-foreground">
-          Monitor low-confidence retrievals and investigate negative feedback.
+          Monitor low-confidence retrievals and investigate feedback.
         </p>
       </div>
 
       <Tabs defaultValue="low" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="low">Low Confidence</TabsTrigger>
-          <TabsTrigger value="feedback">Negative Feedback</TabsTrigger>
+          <TabsTrigger value="low">Low Confidence Traces</TabsTrigger>
         </TabsList>
         <TabsContent value="low" className="space-y-4">
           <LowConfidenceTable
             data={lowConfidenceData}
             isLoading={isLoadingLowConfidence}
-            onInspect={setSelectedTrace}
+            onInspect={handleInspectTrace}
           />
-        </TabsContent>
-        <TabsContent value="feedback" className="space-y-4">
-          <NegativeFeedbackList data={negativeFeedback} isLoading={isLoadingFeedback} />
         </TabsContent>
       </Tabs>
 
@@ -318,7 +268,7 @@ function EvalsContent() {
           <SheetHeader>
             <SheetTitle>Trace Inspector</SheetTitle>
             <SheetDescription>
-              {selectedTrace?.userQuery || "Review trace details and context."}
+              {selectedTrace?.reason || "Review trace details."}
             </SheetDescription>
           </SheetHeader>
 
@@ -328,7 +278,7 @@ function EvalsContent() {
                 <h3 className="text-lg font-semibold">Conversation</h3>
                 <Badge variant="outline" className="flex items-center gap-1">
                   <AlertTriangle className="h-4 w-4" />
-                  {formatScore(selectedTrace?.confidence ?? null)}
+                  {formatScore(selectedTrace?.confidence_score ?? null)}
                 </Badge>
               </div>
               <ScrollArea className="h-80 rounded-md border p-3">
@@ -339,15 +289,49 @@ function EvalsContent() {
             <Separator />
 
             <div className="space-y-3">
-              <h3 className="text-lg font-semibold">Retrieved Context</h3>
-              <ContextChunks rawChunks={selectedTrace?.chunks ?? selectedTrace?.citations} />
+              <h3 className="text-lg font-semibold">Feedback</h3>
+              {isLoadingFeedbackStatus ? (
+                <Skeleton className="h-20 w-full" />
+              ) : feedbackAlreadySubmitted ? (
+                <p className="text-sm text-muted-foreground">
+                  Feedback already submitted for this trace.
+                </p>
+              ) : (
+                <form onSubmit={(e) => { e.preventDefault(); void handleSubmitFeedback(); }} className="space-y-4">
+                  <RadioGroup value={feedbackRating || ""} onValueChange={(value: "good" | "bad") => setFeedbackRating(value)} className="flex space-x-4">
+                    <div>
+                      <RadioGroupItem value="good" id="rating-good" className="peer sr-only" />
+                      <Label htmlFor="rating-good" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
+                        <ThumbsUp className="mb-3 h-6 w-6" />
+                        <span>Good</span>
+                      </Label>
+                    </div>
+                    <div>
+                      <RadioGroupItem value="bad" id="rating-bad" className="peer sr-only" />
+                      <Label htmlFor="rating-bad" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
+                        <ThumbsDown className="mb-3 h-6 w-6" />
+                        <span>Bad</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  <Textarea
+                    placeholder="Optional: Add a comment about this trace..."
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value)}
+                    rows={3}
+                  />
+                  <Button type="submit" disabled={isSubmittingFeedback || !feedbackRating}>
+                    {isSubmittingFeedback ? "Submitting..." : "Submit Feedback"}
+                  </Button>
+                </form>
+              )}
             </div>
 
             <Separator />
 
             <div className="space-y-2">
               <h3 className="text-lg font-semibold">Actions</h3>
-              <Button onClick={handleAddToKnowledgeBase}>Add to Knowledge Base</Button>
+              <Button disabled onClick={() => toast({ title: "Coming soon", description: "Add to Knowledge Base will be available soon." })}>Add to Knowledge Base</Button>
             </div>
           </div>
         </SheetContent>
@@ -368,3 +352,5 @@ export default function Evals() {
     </QueryClientProvider>
   );
 }
+
+

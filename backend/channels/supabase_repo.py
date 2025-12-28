@@ -19,66 +19,50 @@ class ChannelsSupabaseRepo:
     def _get_table(self, table_name: str):
         return self._client.table(table_name)
 
-    def fetch_messenger_page_config(self, workspace_id: uuid.UUID, agent_id: uuid.UUID) -> Dict[str, Any]:
+    def get_agent_channel(self, agent_id: uuid.UUID, platform: str) -> Dict[str, Any]:
         """
-        Fetches the Messenger page access token for an agent.
+        Fetches a single, specific channel configuration for an agent.
         """
         try:
-            response = self._get_table("channel_configurations").select("config") \
-                .eq("workspace_id", str(workspace_id)) \
+            response = self._get_table("agent_channels").select("config") \
                 .eq("agent_id", str(agent_id)) \
-                .eq("provider", "messenger") \
+                .eq("platform", platform) \
                 .single().execute()
             if not response.data:
-                raise exceptions.NotFound(f"Messenger configuration not found for agent {agent_id}")
-            return response.data.get("config", {})
-        except exceptions.NotFound:
-            raise
-        except Exception as e:
-            raise SupabaseUnavailableError(detail=f"Failed to fetch Messenger page config: {e}")
-
-    def fetch_instagram_config(self, workspace_id: uuid.UUID, agent_id: uuid.UUID) -> Dict[str, Any]:
-        """
-        Fetches the Instagram access token for an agent.
-        """
-        try:
-            response = self._get_table("channel_configurations").select("config") \
-                .eq("workspace_id", str(workspace_id)) \
-                .eq("agent_id", str(agent_id)) \
-                .eq("provider", "instagram") \
-                .single().execute()
-            if not response.data:
-                raise exceptions.NotFound(f"Instagram configuration not found for agent {agent_id}")
-            return response.data.get("config", {})
-        except exceptions.NotFound:
-            raise
-        except Exception as e:
-            raise SupabaseUnavailableError(detail=f"Failed to fetch Instagram config: {e}")
-
-    def fetch_agent_channel_config(self, agent_id: uuid.UUID, workspace_id: uuid.UUID, channel: str) -> Dict[str, Any]:
-        """
-        Fetches specific channel configuration for an agent within a workspace.
-        """
-        try:
-            response = self._get_table("agent_channels").select("config, agent_id, workspace_id, channel").eq("agent_id", str(agent_id)).eq("workspace_id", str(workspace_id)).eq("channel", channel).single().execute()
-            if not response.data:
-                raise exceptions.NotFound(f"Channel config for agent {agent_id} on channel {channel} not found or not accessible.")
+                raise exceptions.NotFound(f"{platform} configuration not found for agent {agent_id}")
             return response.data
         except exceptions.NotFound:
             raise
         except Exception as e:
-            raise SupabaseUnavailableError(detail=f"Failed to fetch agent channel config: {e}")
+            raise SupabaseUnavailableError(detail=f"Failed to fetch {platform} config: {e}")
 
     def update_conversation_status(self, conversation_id: uuid.UUID, status: Literal["ai_active", "needs_human", "human_active"]):
         """
         Updates the status of a conversation session.
         """
         try:
-            response = self._get_table("chat_sessions").update({"status": status}).eq("id", str(conversation_id)).execute()
+            # Note: conversation status is on 'conversations' table, not 'chat_sessions'
+            response = self._get_table("conversations").update({"status": status}).eq("id", str(conversation_id)).execute()
             if not response.data:
                 raise SupabaseUnavailableError(f"Failed to update conversation {conversation_id} status to {status}.")
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to update conversation status: {e}")
+
+    def update_conversation_last_message_info(self, conversation_id: uuid.UUID, last_message_content: str):
+        """
+        Updates the `last_message_at` and `summary` (with last message content)
+        of a conversation in `public.conversations`.
+        """
+        try:
+            response = self._get_table("conversations").update({
+                "last_message_at": "now()",
+                "summary": last_message_content
+            }).eq("id", str(conversation_id)).execute()
+            if not response.data:
+                raise SupabaseUnavailableError(f"Failed to update last message info for conversation {conversation_id}.")
+        except Exception as e:
+            raise SupabaseUnavailableError(detail=f"Failed to update conversation last message info: {e}")
+
 
     def fetch_agent_handoff_settings(self, agent_id: uuid.UUID, workspace_id: uuid.UUID) -> Dict[str, Any]:
         """
@@ -97,6 +81,10 @@ class ChannelsSupabaseRepo:
     def create_outbound_message(self, message_data: Dict[str, Any]):
         """
         Stores an outbound message in Supabase before sending.
+        (NOTE: This method seems to use 'agent_chat_messages',
+        but `insert_chat_message` below will use 'chat_messages' for general chat history.
+        The correct table should be determined by overall schema design).
+        For now, `insert_chat_message` is the one to use for Inbox messages.
         """
         try:
             message_id = message_data.get("id", str(uuid.uuid4()))
@@ -109,9 +97,47 @@ class ChannelsSupabaseRepo:
                 "direction": "outbound",
                 "message_type": message_data.get("message_type", "text"),
                 "content": message_data["content"],
-                "raw_payload": message_data.get("raw_payload", {{}})
+                "raw_payload": message_data.get("raw_payload", {})
             }).execute()
             if not response.data:
                 raise SupabaseUnavailableError("Failed to store outbound message.")
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to store outbound message: {e}")
+
+    def insert_chat_message(self, session_id: uuid.UUID, role: str, content: str, tokens_used: int | None = None) -> uuid.UUID:
+        """
+        Inserts a message into public.chat_messages.
+        """
+        try:
+            message_id = uuid.uuid4()
+            message_data = {
+                "id": str(message_id),
+                "session_id": str(session_id),
+                "role": role,
+                "content": content
+            }
+            if tokens_used is not None:
+                message_data["token_count"] = tokens_used
+
+            response = self._get_table("chat_messages").insert(message_data).execute()
+            
+            if response.data:
+                return message_id
+            else:
+                raise SupabaseUnavailableError(f"Failed to insert {role} message for session {session_id}.")
+        except Exception as e:
+            raise SupabaseUnavailableError(detail=f"Failed to insert {role} message for session {session_id}: {e}")
+
+    def get_conversation(self, conversation_id: uuid.UUID) -> Dict[str, Any] | None:
+        """
+        Fetches a single conversation by its ID from public.conversations.
+        """
+        try:
+            response = self._get_table("conversations").select("*").eq("id", str(conversation_id)).single().execute()
+            return response.data
+        except Exception as e:
+            # If conversation not found, data will be None, no need to raise if it's expected
+            # just return None or let caller handle it.
+            if "PGRST" in str(e) and "rows not found" in str(e): # Specific Supabase error for no rows
+                 return None
+            raise SupabaseUnavailableError(detail=f"Failed to fetch conversation {conversation_id}: {e}")

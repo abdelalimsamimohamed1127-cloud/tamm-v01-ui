@@ -1,4 +1,10 @@
-import { supabase } from '@/integrations/supabase/client'
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client'
+
+function ensureSupabase() {
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error("Supabase not configured");
+  }
+}
 
 export type Order = {
   id: string
@@ -13,6 +19,7 @@ export type Order = {
 }
 
 export async function getOrders(workspaceId: string): Promise<Order[]> {
+  ensureSupabase();
   const { data, error } = await supabase
     .from('orders')
     .select('*')
@@ -27,6 +34,7 @@ export async function getOrders(workspaceId: string): Promise<Order[]> {
 }
 
 export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
+  ensureSupabase();
   const { error } = await supabase
     .from('orders')
     .update({ status })

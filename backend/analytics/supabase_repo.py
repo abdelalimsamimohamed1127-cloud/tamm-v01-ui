@@ -150,6 +150,26 @@ class AnalyticsSupabaseRepo:
         total_msgs = sum(row.get("total_messages", 0) for row in data)
         return round(total_time / total_msgs, 2) if total_msgs > 0 else 0
 
+    def get_insights(self, workspace_id: uuid.UUID, start_date: datetime.date = None, end_date: datetime.date = None, insight_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Fetches insights from the analytics_insights table.
+        """
+        try:
+            query = self._client.from_("analytics_insights").select("*") \
+                        .eq("workspace_id", str(workspace_id))
+            
+            if start_date:
+                query = query.gte("period_start", str(start_date))
+            if end_date:
+                query = query.lte("period_end", str(end_date))
+            if insight_type:
+                query = query.eq("insight_type", insight_type)
+            
+            response = query.order("created_at.desc").execute()
+            return response.data if response.data else []
+        except Exception as e:
+            raise SupabaseUnavailableError(detail=f"Failed to fetch insights from Supabase: {e}")
+
     def store_insight(self, insight_data: Dict[str, Any]):
         """
         Stores a generated insight in the analytics_insights table.
@@ -165,32 +185,18 @@ class AnalyticsSupabaseRepo:
                 raise SupabaseUnavailableError("Failed to store insight.")
         except Exception as e:
             raise SupabaseUnavailableError(detail=f"Failed to store insight in Supabase: {e}")
-
-
-class MessageEnrichmentSupabaseRepo:
-    """
-    Dedicated repository for persisting message enrichment data.
-    Separated from AnalyticsSupabaseRepo to maintain "analytics reads only" rule for the latter.
-    """
-    def __init__(self, user_jwt: str):
-        self._client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY, options={"headers": {"Authorization": f"Bearer {user_jwt}"}})
-
-    def persist_message_enrichment(self, enrichment_data: Dict[str, Any]):
+    
+    def update_conversation_enrichment(self, conversation_id: uuid.UUID, sentiment: str, topic: str, urgency: str):
         """
-        Persists message enrichment data to the analytics_message_enrichment table.
+        Updates the sentiment, topic, and urgency fields of a conversation in public.conversations.
         """
         try:
-            response = self._client.table("analytics_message_enrichment").insert({
-                "id": str(uuid.uuid4()),
-                "message_id": str(enrichment_data["message_id"]),
-                "workspace_id": str(enrichment_data["workspace_id"]),
-                "agent_id": str(enrichment_data.get("agent_id")),
-                "topic": enrichment_data.get("topic"),
-                "intent": enrichment_data.get("intent"),
-                "sentiment": enrichment_data.get("sentiment"),
-                "entities": enrichment_data.get("entities", {}),
-            }).execute()
+            response = self._client.table("conversations").update({
+                "sentiment_score": sentiment, # Assuming direct string mapping for now, or convert to int2
+                "primary_topic": topic,
+                "urgency": urgency,
+            }).eq("id", str(conversation_id)).execute()
             if not response.data:
-                raise SupabaseUnavailableError("Failed to persist message enrichment data.")
+                raise SupabaseUnavailableError(f"Failed to update enrichment for conversation {conversation_id}.")
         except Exception as e:
-            raise SupabaseUnavailableError(f"Failed to persist message enrichment data: {e}")
+            raise SupabaseUnavailableError(f"Failed to update conversation enrichment: {e}")

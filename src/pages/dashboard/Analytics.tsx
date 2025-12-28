@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Loader2 } from "lucide-react";
 
-import { supabase } from "@/integrations/supabase/client";
+import { useWorkspace } from "@/hooks";
+import { getDailyStats, type DailyStat } from "@/services";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,89 +23,40 @@ const RANGE_OPTIONS = [
 ];
 
 const chartConfig = {
-  user_messages: {
-    label: "User messages",
+  messages_count: {
+    label: "Total Messages",
     color: "hsl(var(--chart-1))",
-  },
-  ai_messages: {
-    label: "AI messages",
-    color: "hsl(var(--chart-2))",
   },
 } satisfies ChartConfig;
 
-type MessageRow = {
-  created_at: string;
-  role: string | null;
-  session_id?: string | null;
-  user_id?: string | null;
-};
+function fillMissingDays(data: DailyStat[], startDate: Date, days: number): DailyStat[] {
+    const dataMap = new Map(data.map(item => [item.date.split('T')[0], item]));
+    const result: DailyStat[] = [];
+    const cursor = new Date(startDate);
 
-type DailyStatRow = {
-  date: string;
-  user_messages?: number | null;
-  ai_messages?: number | null;
-  total_messages?: number | null;
-};
-
-type UsageEventRow = {
-  created_at?: string | null;
-  cost_usd?: number | null;
-};
-
-function formatDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function buildEmptyRange(startDate: Date, days: number) {
-  const buckets = new Map<string, { user_messages: number; ai_messages: number }>();
-  const cursor = new Date(startDate);
-  cursor.setHours(0, 0, 0, 0);
-
-  for (let i = 0; i < days; i += 1) {
-    const dateKey = formatDateKey(cursor);
-    buckets.set(dateKey, { user_messages: 0, ai_messages: 0 });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return buckets;
-}
-
-function aggregateMessages(
-  messages: MessageRow[],
-  startDate: Date,
-  days: number,
-): { date: string; user_messages: number; ai_messages: number }[] {
-  const buckets = buildEmptyRange(startDate, days);
-
-  messages.forEach((message) => {
-    if (!message.created_at) return;
-
-    const dateKey = message.created_at.slice(0, 10);
-    if (!buckets.has(dateKey)) return;
-
-    const bucket = buckets.get(dateKey);
-    if (!bucket) return;
-
-    const role = (message.role || "").toLowerCase();
-    if (role === "assistant" || role === "ai" || role === "model") {
-      bucket.ai_messages += 1;
-    } else {
-      bucket.user_messages += 1;
+    for (let i = 0; i < days; i++) {
+        const dateKey = cursor.toISOString().split('T')[0];
+        if (dataMap.has(dateKey)) {
+            result.push(dataMap.get(dateKey)!);
+        } else {
+            result.push({
+                date: dateKey,
+                conversations_count: 0,
+                messages_count: 0,
+                orders_count: 0,
+                revenue_total: 0,
+            });
+        }
+        cursor.setDate(cursor.getDate() + 1);
     }
-  });
-
-  return Array.from(buckets.entries()).map(([date, counts]) => ({
-    date,
-    ...counts,
-  }));
+    return result;
 }
 
 export default function Analytics() {
+  const { workspace: activeWorkspace } = useWorkspace();
   const [selectedRange, setSelectedRange] = useState<number>(RANGE_OPTIONS[0]?.value ?? 7);
-  const [totalMessages, setTotalMessages] = useState(0);
-  const [activeUsers, setActiveUsers] = useState(0);
-  const [estimatedCost, setEstimatedCost] = useState(0);
-  const [chartData, setChartData] = useState<{ date: string; user_messages: number; ai_messages: number }[]>([]);
+  
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,89 +70,45 @@ export default function Analytics() {
 
   useEffect(() => {
     async function fetchAnalytics() {
+      if (!activeWorkspace?.id) return;
+
       setIsLoading(true);
       setError(null);
 
-      const startDateIso = rangeStartDate.toISOString();
-
       try {
-        const [messagesRes, usageEventsRes, dailyStatsRes] = await Promise.all([
-          supabase
-            .from("chat_messages")
-            .select("created_at, role, session_id, user_id")
-            .gte("created_at", startDateIso)
-            .order("created_at", { ascending: true }),
-          supabase.from("usage_events").select("cost_usd, created_at").gte("created_at", startDateIso),
-          supabase
-            .from("daily_stats")
-            .select("date, user_messages, ai_messages, total_messages")
-            .gte("date", startDateIso)
-            .order("date", { ascending: true }),
-        ]);
-
-        if (messagesRes.error) {
-          throw messagesRes.error;
-        }
-
-        const messageRows = (messagesRes.data as MessageRow[]) ?? [];
-        setTotalMessages(messageRows.length);
-
-        const uniqueUsers = new Set<string>();
-        messageRows.forEach((message) => {
-          const identifier = message.session_id || message.user_id;
-          if (identifier) {
-            uniqueUsers.add(identifier);
-          }
-        });
-        setActiveUsers(uniqueUsers.size);
-
-        if (usageEventsRes.error) {
-          throw usageEventsRes.error;
-        }
-
-        const usageEvents = (usageEventsRes.data as UsageEventRow[]) ?? [];
-        const cost = usageEvents.reduce((sum, event) => sum + Number(event.cost_usd ?? 0), 0);
-        setEstimatedCost(cost);
-
-        let nextChartData: { date: string; user_messages: number; ai_messages: number }[] = [];
-
-        if (!dailyStatsRes.error && dailyStatsRes.data && dailyStatsRes.data.length > 0) {
-          const dailyRows = dailyStatsRes.data as DailyStatRow[];
-          nextChartData = buildEmptyRange(rangeStartDate, selectedRange)
-            .entries()
-            .map(([date]) => {
-              const dailyRow = dailyRows.find((row) => row.date?.slice(0, 10) === date);
-              const userMessages = Number(dailyRow?.user_messages ?? 0);
-              const aiMessages =
-                dailyRow?.ai_messages !== undefined && dailyRow?.ai_messages !== null
-                  ? Number(dailyRow.ai_messages)
-                  : Math.max(0, Number(dailyRow?.total_messages ?? 0) - userMessages);
-
-              return {
-                date,
-                user_messages: userMessages,
-                ai_messages: aiMessages,
-              };
-            });
-        } else {
-          nextChartData = aggregateMessages(messageRows, rangeStartDate, selectedRange);
-        }
-
-        setChartData(nextChartData);
+        const stats = await getDailyStats(activeWorkspace.id, rangeStartDate.toISOString());
+        const filledStats = fillMissingDays(stats, rangeStartDate, selectedRange);
+        setDailyStats(filledStats);
       } catch (requestError) {
         console.error("Failed to load analytics", requestError);
         setError("Unable to load analytics data right now. Please try again later.");
-        setTotalMessages(0);
-        setActiveUsers(0);
-        setEstimatedCost(0);
-        setChartData([]);
+        setDailyStats([]);
       } finally {
         setIsLoading(false);
       }
     }
 
     void fetchAnalytics();
-  }, [rangeStartDate, selectedRange]);
+  }, [activeWorkspace?.id, rangeStartDate, selectedRange]);
+
+  const { totalMessages, totalConversations, totalRevenue } = useMemo(() => {
+    return dailyStats.reduce(
+      (acc, stat) => {
+        acc.totalMessages += stat.messages_count;
+        acc.totalConversations += stat.conversations_count;
+        acc.totalRevenue += stat.revenue_total;
+        return acc;
+      },
+      { totalMessages: 0, totalConversations: 0, totalRevenue: 0 }
+    );
+  }, [dailyStats]);
+
+  const chartData = useMemo(() => {
+    return dailyStats.map(stat => ({
+        date: new Date(stat.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+        messages_count: stat.messages_count,
+    }));
+  }, [dailyStats]);
 
   return (
     <div className="space-y-10">
@@ -225,12 +133,12 @@ export default function Analytics() {
         </div>
       </div>
 
-      {error ? (
+      {error && (
         <Alert variant="destructive">
           <AlertTitle>Analytics unavailable</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      ) : null}
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -241,14 +149,14 @@ export default function Analytics() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Active Users</CardDescription>
-            <CardTitle className="text-2xl">{activeUsers.toLocaleString()}</CardTitle>
+            <CardDescription>Total Conversations</CardDescription>
+            <CardTitle className="text-2xl">{totalConversations.toLocaleString()}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Estimated Cost</CardDescription>
-            <CardTitle className="text-2xl">${estimatedCost.toFixed(2)}</CardTitle>
+            <CardDescription>Total Revenue</CardDescription>
+            <CardTitle className="text-2xl">${totalRevenue.toFixed(2)}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -256,7 +164,7 @@ export default function Analytics() {
       <Card>
         <CardHeader className="flex flex-col gap-1">
           <CardTitle>Daily Message Volume</CardTitle>
-          <CardDescription>Breakdown of user and AI messages per day.</CardDescription>
+          <CardDescription>Total messages sent by users and agents per day.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoading ? (
@@ -264,6 +172,7 @@ export default function Analytics() {
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Loading analytics...</span>
             </div>
+
           ) : chartData.length === 0 ? (
             <p className="text-sm text-muted-foreground">No message activity for this range.</p>
           ) : (
@@ -273,8 +182,7 @@ export default function Analytics() {
                 <XAxis dataKey="date" tickLine={false} axisLine={false} />
                 <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
                 <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                <Bar dataKey="user_messages" fill="var(--color-user_messages)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="ai_messages" fill="var(--color-ai_messages)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="messages_count" fill="var(--color-messages_count)" radius={[4, 4, 0, 0]} />
                 <ChartLegend content={<ChartLegendContent />} />
               </BarChart>
             </ChartContainer>

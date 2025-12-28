@@ -22,6 +22,7 @@ class CopilotInsightsChatAPIView(APIView):
     """
     authentication_classes = [SupabaseJWTAuthentication]
     permission_classes = [IsWorkspaceMember]
+    throttle_classes = [CopilotChatThrottle] # Apply the custom throttle
 
     def post(self, request, *args, **kwargs):
         serializer = CopilotChatRequestSerializer(data=request.data)

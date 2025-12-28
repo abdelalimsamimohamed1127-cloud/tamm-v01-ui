@@ -3,27 +3,27 @@ import { addChannelDocLanguage, fetchChannelDocLanguages, ChannelDocLanguage } f
 import { useWorkspace } from "@/hooks/useWorkspace";
 
 export function useChannelDocLanguages(channelKey: string | null) {
-  const { workspace } = useWorkspace();
+  const { workspaceId } = useWorkspace(); // Changed to workspaceId
   const [languages, setLanguages] = useState<ChannelDocLanguage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!channelKey) {
+    if (!channelKey || !workspaceId) { // Added check for workspaceId
       setLanguages([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchChannelDocLanguages(workspace.id, channelKey);
+      const data = await fetchChannelDocLanguages(workspaceId, channelKey); // Used workspaceId
       setLanguages(data);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load languages");
     } finally {
       setLoading(false);
     }
-  }, [workspace.id, channelKey]);
+  }, [workspaceId, channelKey]); // Dependency changed
 
   useEffect(() => {
     load();
@@ -31,11 +31,11 @@ export function useChannelDocLanguages(channelKey: string | null) {
 
   const addLanguage = useCallback(
     async (langCode: string) => {
-      if (!channelKey) return;
-      await addChannelDocLanguage(workspace.id, channelKey, langCode);
+      if (!channelKey || !workspaceId) return; // Added check for workspaceId
+      await addChannelDocLanguage(workspaceId, channelKey, langCode); // Used workspaceId
       await load();
     },
-    [workspace.id, channelKey, load]
+    [workspaceId, channelKey, load] // Dependency changed
   );
 
   return { languages, loading, error, refresh: load, addLanguage };

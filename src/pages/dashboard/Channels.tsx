@@ -408,19 +408,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { BookOpen, Mail, MessageCircle, MessageSquare, X } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useChannelDocs } from "@/hooks/useChannelDocs";
 import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
-import { useWorkspace } from "@/hooks/useWorkspace";
+import { useWorkspace } from "@/hooks";
 import { toast } from "@/components/ui/sonner";
-import { getAgentForWorkspace } from "@/services/agents";
-import {
-  AgentChannel,
-  ChannelPlatform,
-  getAgentChannels,
-  toggleChannel,
-} from "@/services/channels";
+import { getAgentForWorkspace, getAgentChannels, upsertAgentChannel, disconnectAgentChannel, type AgentChannel, type ChannelPlatform } from "@/services";
+import { ChannelConfigDrawer, WhatsappConfig } from "@/components/channels/ChannelConfigDrawer";
 
 /* =============================
    TYPES
@@ -430,16 +426,9 @@ type Channel = {
   title: string;
   desc: string;
   icon: React.ComponentType<{ className?: string }>;
-  enabled?: boolean;
+  agentChannel?: AgentChannel; // Full agent_channel record from DB
   beta?: boolean;
 };
-
-const getEmptyChannelState = (): Record<ChannelPlatform, boolean> => ({
-  webchat: false,
-  whatsapp: false,
-  messenger: false,
-  email: false,
-});
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Please try again.";
@@ -447,7 +436,7 @@ const getErrorMessage = (error: unknown) =>
 /* =============================
    DATA (UI ONLY)
 ============================= */
-const CHANNEL_LIBRARY: Omit<Channel, "enabled">[] = [
+const CHANNEL_LIBRARY: Omit<Channel, "agentChannel">[] = [
   {
     id: "webchat",
     title: "Webchat",
@@ -467,6 +456,12 @@ const CHANNEL_LIBRARY: Omit<Channel, "enabled">[] = [
     icon: MessageCircle,
   },
   {
+    id: "instagram",
+    title: "Instagram",
+    desc: "Engage with customers via Instagram DMs.",
+    icon: MessageCircle,
+  },
+  {
     id: "email",
     title: "Email",
     desc:
@@ -483,14 +478,54 @@ function ChannelCard({
   channel,
   onOpenDocs,
   onToggle,
+  onConnect,
   isLoading,
 }: {
   channel: Channel;
   onOpenDocs: () => void;
   onToggle: (nextEnabled: boolean) => void;
+  onConnect: () => void;
   isLoading: boolean;
 }) {
   const Icon = channel.icon;
+  const status = channel.agentChannel?.status ?? "disconnected";
+  const isEnabled = channel.agentChannel?.is_active ?? false;
+  const isConfigurable = ['whatsapp', 'messenger', 'instagram'].includes(channel.id);
+
+  const renderActions = () => {
+    if (isConfigurable) {
+      switch (status) {
+        case 'connected':
+          return (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="border-green-500 text-green-600">Connected</Badge>
+              <Button variant="outline" size="sm" onClick={onConnect} disabled={isLoading}>Configure</Button>
+            </div>
+          );
+        case 'pending':
+          return (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="border-amber-500 text-amber-600">Pending</Badge>
+              <Button variant="outline" size="sm" onClick={onConnect} disabled={isLoading}>Configure</Button>
+            </div>
+          );
+        case 'disconnected':
+        default:
+          return <Button variant="outline" size="sm" onClick={onConnect} disabled={isLoading}>Connect</Button>;
+      }
+    }
+    // Default toggle for other channels like webchat
+    return (
+      <Button
+        variant={isEnabled ? "secondary" : "outline"}
+        size="sm"
+        onClick={() => onToggle(!isEnabled)}
+        disabled={isLoading}
+      >
+        {isEnabled ? "Disable" : "Enable"}
+      </Button>
+    );
+  }
 
   return (
     <Card
@@ -529,15 +564,7 @@ function ChannelCard({
         >
           <BookOpen className="h-4 w-4" />
         </button>
-
-        <Button
-          variant={channel.enabled ? "secondary" : "outline"}
-          size="sm"
-          onClick={() => onToggle(!channel.enabled)}
-          disabled={isLoading}
-        >
-          {channel.enabled ? "Disable" : "Enable"}
-        </Button>
+        {renderActions()}
       </div>
     </Card>
   );
@@ -618,85 +645,58 @@ export default function Channels() {
   const [leftWidth, setLeftWidth] = useState(28);
   const [isDragging, setIsDragging] = useState(false);
   const [activeDoc, setActiveDoc] = useState<Channel | null>(null);
+  const [configuringChannel, setConfiguringChannel] = useState<Channel | null>(null);
   const { workspace } = useWorkspace();
-  const [enabledChannels, setEnabledChannels] = useState<
-    Record<ChannelPlatform, boolean>
-  >(getEmptyChannelState());
+  
+  const [agentChannels, setAgentChannels] = useState<AgentChannel[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [loadingChannelId, setLoadingChannelId] =
     useState<ChannelPlatform | null>(null);
-  const [isLoadingChannels, setIsLoadingChannels] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const isMobile =
     typeof window !== "undefined" && window.innerWidth < 1024;
+  
+  const fetchChannelsData = useCallback(async () => {
+    if (!workspace?.id) {
+      setAgentId(null);
+      setAgentChannels([]);
+      setIsLoading(false);
+      return;
+    }
 
-  const mapChannelState = useCallback((rows: AgentChannel[]) => {
-    const nextState: Record<ChannelPlatform, boolean> =
-      getEmptyChannelState();
-
-    rows.forEach((row) => {
-      nextState[row.platform] = Boolean(row.is_active);
-    });
-
-    return nextState;
-  }, []);
+    setIsLoading(true);
+    try {
+      const agent = await getAgentForWorkspace(workspace.id);
+      if (agent?.id) {
+        setAgentId(agent.id);
+        const rows = await getAgentChannels(agent.id);
+        setAgentChannels(rows);
+      } else {
+        setAgentId(null);
+        setAgentChannels([]);
+      }
+    } catch (error) {
+      setAgentId(null);
+      setAgentChannels([]);
+      toast.error("Failed to load channels", {
+        description: getErrorMessage(error),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [workspace?.id]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const bootstrap = async () => {
-      if (!workspace?.id) {
-        setAgentId(null);
-        setEnabledChannels(getEmptyChannelState());
-        setIsLoadingChannels(false);
-        return;
-      }
-
-      setIsLoadingChannels(true);
-      try {
-        const agent = await getAgentForWorkspace(workspace.id);
-        if (!isMounted) return;
-
-        if (agent?.id) {
-          setAgentId(agent.id);
-          const rows = await getAgentChannels(agent.id);
-          if (!isMounted) return;
-          setEnabledChannels(mapChannelState(rows));
-        } else {
-          setAgentId(null);
-          setEnabledChannels(getEmptyChannelState());
-        }
-      } catch (error) {
-        if (isMounted) {
-          setAgentId(null);
-          setEnabledChannels(getEmptyChannelState());
-          toast.error("Failed to load channels", {
-            description: getErrorMessage(error),
-          });
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoadingChannels(false);
-        }
-      }
-    };
-
-    void bootstrap();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [workspace?.id, mapChannelState]);
+    fetchChannelsData();
+  }, [fetchChannelsData]);
 
   const handleToggle = useCallback(
     async (channelId: ChannelPlatform, nextEnabled: boolean) => {
       if (!agentId) return;
 
-      const previous = enabledChannels[channelId];
-      setEnabledChannels((current) => ({
-        ...current,
-        [channelId]: nextEnabled,
-      }));
+      const originalChannels = [...agentChannels];
+      setAgentChannels(prev => prev.map(c => c.platform === channelId ? { ...c, is_active: nextEnabled } : c));
       setLoadingChannelId(channelId);
 
       try {
@@ -705,10 +705,7 @@ export default function Channels() {
           nextEnabled ? "Channel enabled" : "Channel disabled"
         );
       } catch (error) {
-        setEnabledChannels((current) => ({
-          ...current,
-          [channelId]: previous,
-        }));
+        setAgentChannels(originalChannels);
         toast.error("Unable to update channel", {
           description: getErrorMessage(error),
         });
@@ -716,7 +713,7 @@ export default function Channels() {
         setLoadingChannelId(null);
       }
     },
-    [agentId, enabledChannels]
+    [agentId, agentChannels]
   );
 
   useEffect(() => {
@@ -740,9 +737,9 @@ export default function Channels() {
     () =>
       CHANNEL_LIBRARY.map((c) => ({
         ...c,
-        enabled: enabledChannels[c.id],
+        agentChannel: agentChannels.find(ac => ac.platform === c.id),
       })),
-    [enabledChannels]
+    [agentChannels]
   );
 
   return (
@@ -763,7 +760,7 @@ export default function Channels() {
         >
           <h2 className="mb-4 text-lg font-semibold">All channels</h2>
 
-          {isLoadingChannels ? (
+          {isLoading ? (
             <p className="text-sm text-muted-foreground">
               Loading channels...
             </p>
@@ -775,8 +772,9 @@ export default function Channels() {
                   channel={c}
                   onOpenDocs={() => setActiveDoc(c)}
                   onToggle={(next) => void handleToggle(c.id, next)}
+                  onConnect={() => setConfiguringChannel(c)}
                   isLoading={
-                    isLoadingChannels || loadingChannelId === c.id || !agentId
+                    isLoading || loadingChannelId === c.id || !agentId
                   }
                 />
               ))}
@@ -789,6 +787,20 @@ export default function Channels() {
         <DocumentationDrawer
           channel={activeDoc}
           onClose={() => setActiveDoc(null)}
+        />
+      )}
+
+      {configuringChannel && ['whatsapp', 'messenger', 'instagram'].includes(configuringChannel.id) && agentId && (
+        <ChannelConfigDrawer
+          agentId={agentId}
+          platform={configuringChannel.id as "whatsapp" | "messenger" | "instagram"}
+          isOpen={!!configuringChannel}
+          onClose={() => setConfiguringChannel(null)}
+          onSaveSuccess={() => {
+            setConfiguringChannel(null);
+            fetchChannelsData();
+          }}
+          existingConfig={configuringChannel.agentChannel?.config}
         />
       )}
     </div>

@@ -1,18 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useWorkspace } from "@/hooks/useWorkspace";
+import { useWorkspace } from "@/hooks";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  WorkspaceGeneralSettingsCard,
-  WorkspaceMembersSettingsCard,
-  WorkspacePlansSettingsCard,
-} from "@/components/workspace/WorkspaceSettingsSections";
-import {
-  getWalletBalance,
-  getWorkspaceSubscription,
-  type WalletBalance,
-  type WorkspaceSubscription,
-} from "@/services/billing";
+import GeneralTab from "@/components/workspace/tabs/GeneralTab"; // Correct import
+import MembersTab from "@/components/workspace/tabs/MembersTab"; // Correct import
+import PlansTab from "@/components/workspace/tabs/PlansTab";   // Correct import
+import { getWorkspaceWallet, getWorkspacePlan, type WorkspaceWallet, type WorkspacePlan } from "@/services";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +19,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from '@/integrations/supabase/client'; // Import supabase
+import { toast } from '@/hooks/use-toast'; // Import toast
 
 const statusStyles: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-800 border-emerald-200",
@@ -36,32 +31,47 @@ const statusStyles: Record<string, string> = {
 
 type TabValue = "general" | "members" | "billing";
 
-export default function WorkspaceDialogContent() {
-  const { workspace } = useWorkspace();
+export default function WorkspaceDialogContent({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+  const { activeWorkspace, refreshWorkspaces } = useWorkspace();
+  const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState<TabValue>("general");
-  const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null);
-  const [wallet, setWallet] = useState<WalletBalance | null>(null);
+  const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name || '');
+  const [originalWorkspaceName, setOriginalWorkspaceName] = useState(activeWorkspace?.name || ''); // Store original name
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [subscription, setSubscription] = useState<WorkspacePlan | null>(null);
+  const [wallet, setWallet] = useState<WorkspaceWallet | null>(null);
   const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   const [billingLoaded, setBillingLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Initialize workspaceName and originalWorkspaceName when activeWorkspace changes
+  useEffect(() => {
+    if (activeWorkspace?.name) {
+      setWorkspaceName(activeWorkspace.name);
+      setOriginalWorkspaceName(activeWorkspace.name);
+    }
+  }, [activeWorkspace?.name]);
+
 
   useEffect(() => {
     setBillingLoaded(false);
     setSubscription(null);
     setWallet(null);
-  }, [workspace?.id]);
+  }, [activeWorkspace?.id]);
 
   useEffect(() => {
     const loadBilling = async () => {
-      if (!workspace?.id || billingLoaded) return;
+      if (!activeWorkspace?.id || billingLoaded) return;
 
       setIsLoadingBilling(true);
       setError(null);
 
       try {
         const [subscriptionData, walletData] = await Promise.all([
-          getWorkspaceSubscription(workspace.id),
-          getWalletBalance(workspace.id),
+          getWorkspacePlan(activeWorkspace.id),
+          getWorkspaceWallet(activeWorkspace.id),
         ]);
 
         setSubscription(subscriptionData);
@@ -78,7 +88,7 @@ export default function WorkspaceDialogContent() {
     if (activeTab === "billing") {
       void loadBilling();
     }
-  }, [activeTab, workspace?.id, billingLoaded]);
+  }, [activeTab, activeWorkspace?.id, billingLoaded]);
 
   const formattedRenewalDate = useMemo(() => {
     if (!subscription?.currentPeriodEnd) return null;
@@ -89,6 +99,56 @@ export default function WorkspaceDialogContent() {
     if (!wallet || !subscription?.monthlyCredits || subscription.monthlyCredits <= 0) return 0;
     return Math.min((wallet.balance / subscription.monthlyCredits) * 100, 100);
   }, [wallet, subscription]);
+
+
+  const handleSaveWorkspace = async () => {
+    if (!activeWorkspace?.id) {
+      toast({
+        title: "Error",
+        description: "No active workspace selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!workspaceName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Workspace name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('workspaces')
+        .update({ name: workspaceName.trim() })
+        .eq('id', activeWorkspace.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await refreshWorkspaces();
+      onOpenChange(false);
+
+      toast({
+        title: "Success",
+        description: "Workspace name updated successfully!",
+      });
+    } catch (e: any) {
+      console.error("Error saving workspace name:", e.message);
+      toast({
+        title: "Error",
+        description: e.message || "Failed to update workspace name.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
 
   return (
     <div className="w-full max-w-3xl">
@@ -110,13 +170,19 @@ export default function WorkspaceDialogContent() {
 
             <TabsContent value="general" className="pt-4">
               <div className="space-y-4">
-                <WorkspaceGeneralSettingsCard />
-                <WorkspacePlansSettingsCard />
+                <GeneralTab
+                  workspaceName={workspaceName}
+                  setWorkspaceName={setWorkspaceName}
+                  isSaving={isSaving}
+                  onSave={handleSaveWorkspace}
+                  originalWorkspaceName={originalWorkspaceName}
+                />
+                <PlansTab />
               </div>
             </TabsContent>
 
             <TabsContent value="members" className="pt-4">
-              <WorkspaceMembersSettingsCard />
+              <MembersTab />
             </TabsContent>
 
             <TabsContent value="billing" className="pt-4">

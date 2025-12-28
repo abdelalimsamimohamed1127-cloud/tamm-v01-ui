@@ -182,9 +182,6 @@ BEGIN
     WHERE workspace_id = ws.id
       AND created_at < (now() - make_interval(days => keep_days));
 
-    DELETE FROM public.audit_logs
-    WHERE workspace_id = ws.id
-      AND created_at < (now() - make_interval(days => keep_days));
   END LOOP;
 END;
 $$;

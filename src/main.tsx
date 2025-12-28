@@ -4,8 +4,9 @@ import { HashRouter } from "react-router-dom";
 
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
-import { LanguageProvider } from "./contexts/LanguageContext";
+import { LanguageProvider } from "./contexts/LanguageContext"; // Import LanguageProvider
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
+import { AgentProvider } from "./contexts/AgentContext";
 
 import "./index.css";
 
@@ -18,13 +19,15 @@ if (!rootEl) {
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <AuthProvider>
-      <LanguageProvider>
+      <LanguageProvider> {/* Wrap with LanguageProvider */}
         <WorkspaceProvider>
-          <HashRouter>
-            <App />
-          </HashRouter>
+          <AgentProvider>
+            <HashRouter>
+              <App />
+            </HashRouter>
+          </AgentProvider>
         </WorkspaceProvider>
-      </LanguageProvider>
+      </LanguageProvider> {/* Close LanguageProvider */}
     </AuthProvider>
   </React.StrictMode>
 );

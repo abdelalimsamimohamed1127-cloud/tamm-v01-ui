@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { useWorkspace } from "@/hooks/useWorkspace";
+import { useWorkspace } from "@/hooks";
 import { useAdminGuard } from "@/hooks/admin/useAdminGuard";
 import NotAuthorized from "./NotAuthorized";
 import { MarkdownViewer } from "@/components/docs/MarkdownViewer";
@@ -36,7 +36,7 @@ const ROLES = ["owner", "admin", "support", "member"];
 
 export default function AdminDocs() {
   const { isAdmin, isLoading: adminLoading } = useAdminGuard();
-  const { workspace } = useWorkspace();
+  const { workspaceId } = useWorkspace(); // Changed to workspaceId
   const [channelKey, setChannelKey] = useState(CHANNEL_OPTIONS[0]?.key ?? "widget");
   const [langCode, setLangCode] = useState(BASE_LANGUAGES[0]);
   const [title, setTitle] = useState("");
@@ -55,38 +55,44 @@ export default function AdminDocs() {
     return Array.from(new Set([...BASE_LANGUAGES, ...existing]));
   }, [languages]);
 
-  useEffect(() => {
-    async function loadLatest() {
-      if (!channelKey || !langCode) return;
-      const latest = await fetchLatestChannelDocVersion(workspace.id, channelKey, langCode);
-      if (latest) {
-        setTitle(latest.title ?? "");
-        setContent(latest.content_md ?? "");
-      } else {
-        setTitle("");
-        setContent("");
-      }
+  // Use a stable useCallback for loadLatest
+  const loadLatest = useCallback(async () => {
+    if (!workspaceId || !channelKey || !langCode) return; // Added workspaceId check
+    const latest = await fetchLatestChannelDocVersion(workspaceId, channelKey, langCode); // Used workspaceId
+    if (latest) {
+      setTitle(latest.title ?? "");
+      setContent(latest.content_md ?? "");
+    } else {
+      setTitle("");
+      setContent("");
     }
+  }, [workspaceId, channelKey, langCode]);
+
+  useEffect(() => {
     loadLatest();
-  }, [workspace.id, channelKey, langCode]);
+  }, [loadLatest]);
+
+  // Use a stable useCallback for loadVersions
+  const loadVersions = useCallback(async () => {
+    if (!workspaceId || !channelKey) return; // Added workspaceId check
+    const data = await fetchDocVersions(workspaceId, channelKey, langCode); // Used workspaceId
+    setVersions(data);
+  }, [workspaceId, channelKey, langCode]);
 
   useEffect(() => {
-    async function loadVersions() {
-      if (!channelKey) return;
-      const data = await fetchDocVersions(workspace.id, channelKey, langCode);
-      setVersions(data);
-    }
     loadVersions();
-  }, [workspace.id, channelKey, langCode]);
+  }, [loadVersions]);
+
+  // Use a stable useCallback for loadAudit
+  const loadAudit = useCallback(async () => {
+    if (!workspaceId || !channelKey) return; // Added workspaceId check
+    const data = await fetchChannelDocAuditLogs(workspaceId, channelKey, 20); // Used workspaceId
+    setAuditLogs(data);
+  }, [workspaceId, channelKey]);
 
   useEffect(() => {
-    async function loadAudit() {
-      if (!channelKey) return;
-      const data = await fetchChannelDocAuditLogs(workspace.id, channelKey, 20);
-      setAuditLogs(data);
-    }
     loadAudit();
-  }, [workspace.id, channelKey]);
+  }, [loadAudit]);
 
   useEffect(() => {
     if (!languages.find((l) => l.lang_code === langCode)) {
@@ -96,19 +102,20 @@ export default function AdminDocs() {
   }, [langCode, languages, addLanguage, refreshLanguages]);
 
   const handleSave = async (status: "draft" | "published") => {
+    if (!workspaceId) return; // Added workspaceId check
     setSaving(true);
     try {
       await createChannelDocVersion({
-        workspaceId: workspace.id,
+        workspaceId: workspaceId, // Used workspaceId
         channelKey,
         langCode,
         title,
         contentMd: content,
         status,
       });
-      const data = await fetchDocVersions(workspace.id, channelKey, langCode);
+      const data = await fetchDocVersions(workspaceId, channelKey, langCode); // Used workspaceId
       setVersions(data);
-      const latest = await fetchChannelDocAuditLogs(workspace.id, channelKey, 20);
+      const latest = await fetchChannelDocAuditLogs(workspaceId, channelKey, 20); // Used workspaceId
       setAuditLogs(latest);
     } finally {
       setSaving(false);
@@ -116,10 +123,11 @@ export default function AdminDocs() {
   };
 
   const togglePermission = async (role: string, field: "can_read" | "can_write", next: boolean) => {
+    if (!workspaceId) return; // Added workspaceId check
     const current: ChannelPermission =
       permissions.find((p) => p.role === role) ??
       ({
-        workspace_id: workspace.id,
+        workspace_id: workspaceId, // Used workspaceId
         channel_key: channelKey,
         role,
         can_read: false,
@@ -129,10 +137,11 @@ export default function AdminDocs() {
   };
 
   const toggleLanguagePermission = async (role: string, field: "can_read" | "can_write", next: boolean) => {
+    if (!workspaceId) return; // Added workspaceId check
     const current: ChannelLanguagePermission =
       languagePermissions.find((p) => p.role === role && p.lang_code === langCode) ??
       ({
-        workspace_id: workspace.id,
+        workspace_id: workspaceId, // Used workspaceId
         channel_key: channelKey,
         lang_code: langCode,
         role,
@@ -144,6 +153,10 @@ export default function AdminDocs() {
 
   if (adminLoading) {
     return <div className="p-6">Checking admin access...</div>;
+  }
+  
+  if (!workspaceId) { // Additional check for rendering components that rely on workspaceId
+    return <div className="p-6">Loading workspace...</div>;
   }
 
   if (!isAdmin) {

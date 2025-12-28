@@ -1,17 +1,19 @@
 import { useState } from 'react';
-import { 
-  X, 
-  Users, 
-  BarChart3, 
-  Settings, 
-  MoreHorizontal, 
-  Calendar, 
-  Filter, 
+import {
+  X,
+  Users,
+  BarChart3,
+  Settings,
+  MoreHorizontal,
+  Calendar,
+  Filter,
   Search,
   Check,
   ChevronDown,
   ChevronUp,
-  PlusCircle
+  PlusCircle,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -19,56 +21,221 @@ import { Card } from '@/components/ui/card';
 import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
 import { WorkspaceSelectorDropdown } from './WorkspaceSelectorDropdown';
 import { CreateAgentForm } from './CreateAgentForm';
-
+import { useAgent } from '@/hooks/useAgent';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Agent, updateAgent, deleteAgent } from '@/services/agents';
+import { useWorkspace } from '@/hooks';
+import { useToast } from '@/hooks/use-toast';
 // --- Types ---
 type ViewState = 'agents' | 'usage' | 'settings-general' | 'settings-members' | 'settings-plans' | 'settings-billing' | 'create-agent';
 type SettingsTab = 'general' | 'members' | 'plans' | 'billing';
 
-// --- Mock Data ---
-const AGENTS = [
-  { id: 1, name: 'Support Bot Alpha', trained: '2 hours ago', status: 'active' },
-  { id: 2, name: 'Sales Assistant', trained: '1 day ago', status: 'active' },
-  { id: 3, name: 'Internal HR Helper', trained: '3 days ago', status: 'paused' },
-  { id: 4, name: 'Legacy Bot v1', trained: '1 week ago', status: 'inactive' },
-  { id: 5, name: 'Onboarding Guide', trained: '2 weeks ago', status: 'active' },
-];
+
 
 // --- Components ---
 
 /**
  * Sub-Component: Agents List View
  */
-const AgentsList = ({ setActiveSection }: { setActiveSection: (section: ViewState) => void }) => {
+const AgentsList = ({ setActiveSection, onClose }: { setActiveSection: (section: ViewState) => void, onClose: () => void }) => {
+  const { activeWorkspace } = useWorkspace();
+  const { agents, setAgent, refreshAgents, activeAgent } = useAgent();
+  const { toast } = useToast();
+
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAgent = async () => {
+    if (!agentToDelete || !activeWorkspace?.id) return;
+
+    if (agents.length === 1) {
+      toast({
+        title: "Deletion Failed",
+        description: "Cannot delete the last agent in a workspace. Create another agent first.",
+        variant: "destructive",
+      });
+      setIsDeleteDialogOpen(false);
+      setAgentToDelete(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteAgent(agentToDelete.id, activeWorkspace.id);
+      toast({
+        title: "Agent Deleted",
+        description: `Agent "${agentToDelete.name}" has been deleted.`,
+      });
+
+      await refreshAgents(); // Refresh the list of agents
+
+      // If the deleted agent was the active one, select a new active agent
+      if (activeAgent?.id === agentToDelete.id) {
+        const remainingAgents = agents.filter(a => a.id !== agentToDelete.id);
+        if (remainingAgents.length > 0) {
+          setAgent(remainingAgents[0].id);
+        } else {
+          setAgent(null);
+        }
+      }
+
+    } catch (error: any) {
+      console.error("Error deleting agent:", error);
+      toast({
+        title: "Deletion Error",
+        description: error.message || "Failed to delete agent.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+      setAgentToDelete(null);
+    }
+  };
+
+  const handleToggleAgentActive = async (agent: Agent) => {
+    if (!activeWorkspace?.id) return;
+    try {
+      const updated = await updateAgent(agent.id, { is_active: !agent.is_active });
+      toast({
+        title: "Agent Status Updated",
+        description: `Agent "${updated.name}" is now ${updated.is_active ? 'active' : 'inactive'}.`,
+      });
+      await refreshAgents();
+    } catch (error: any) {
+      console.error("Error toggling agent active state:", error);
+      toast({
+        title: "Update Error",
+        description: error.message || "Failed to update agent status.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectAgent = (agentId: string) => {
+    setAgent(agentId);
+    onClose();
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end mb-4">
-        <Button variant="primary" onClick={() => setActiveSection('create-agent')}>
-          <PlusCircle className="h-4 w-4 mr-2" />
-          New AI Agent
-        </Button>
-      </div>
-      {AGENTS.map((agent) => (
-        <Card key={agent.id} className="flex items-center justify-between p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center gap-4">
-            {/* Soft graphic placeholder */}
-            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-primary">
-              <Users className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-base font-semibold text-foreground">{agent.name}</h4>
-              <p className="text-sm text-muted-foreground">Last trained: {agent.trained}</p>
-            </div>
-          </div>
-          
-          <Button variant="ghost" size="icon">
-            <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+    <>
+      <div className="space-y-4">
+        <div className="flex justify-end mb-4">
+          <Button variant="primary" onClick={() => setActiveSection('create-agent')}>
+            <PlusCircle className="h-4 w-4 mr-2" />
+            New AI Agent
           </Button>
-        </Card>
-      ))}
-    </div>
+        </div>
+        {agents.length === 0 ? (
+          <p className="text-center text-muted-foreground">No agents found for this workspace.</p>
+        ) : (
+          agents.map((agent) => (
+            <Card
+              key={agent.id}
+              className="flex items-center justify-between p-4 transition-all duration-200 hover:shadow-md"
+            >
+              <div
+                className="flex items-center gap-4 flex-grow cursor-pointer"
+                onClick={() => handleSelectAgent(agent.id)}
+              >
+                {/* Soft graphic placeholder */}
+                <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-primary">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-foreground">{agent.name}</h4>
+                  {agent.description && <p className="text-sm text-muted-foreground truncate max-w-[200px]">{agent.description}</p>}
+                  <p className="text-xs text-muted-foreground">Status: {agent.status}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id={`active-status-${agent.id}`}
+                    checked={agent.is_active || false}
+                    onCheckedChange={() => handleToggleAgentActive(agent)}
+                    onClick={(e) => e.stopPropagation()} // Prevent card click from firing
+                  />
+                  <Label htmlFor={`active-status-${agent.id}`} className="sr-only">Toggle Active</Label>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
+                      <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Implement edit functionality or navigate to agent settings page
+                        // For now, this is a placeholder. Renaming is often done in a dedicated settings view.
+                        toast({
+                          title: "Edit Agent",
+                          description: "Edit functionality for agents is under development.",
+                        });
+                      }}
+                    >
+                      <Edit className="mr-2 h-4 w-4" /> Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAgentToDelete(agent);
+                        setIsDeleteDialogOpen(true);
+                      }}
+                      className="text-red-600 focus:text-red-600"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete agent "{agentToDelete?.name}"
+              and remove its data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteAgent} className="bg-red-600 hover:bg-red-700" disabled={isDeleting}>
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
-
 /**
  * Sub-Component: Usage Analytics View
  */
@@ -135,6 +302,7 @@ export default function ManageAgentsDialog({
       case 'settings-members': return 'Members';
       case 'settings-plans': return 'Plans';
       case 'settings-billing': return 'Billing';
+      case 'create-agent': return 'Create New AI Agent'; // Add title for create-agent view
       default: return 'Settings';
     }
   };
@@ -250,6 +418,7 @@ export default function ManageAgentsDialog({
                 <option value="settings-members">Members</option>
                 <option value="settings-plans">Plans</option>
                 <option value="settings-billing">Billing</option>
+                <option value="create-agent">Create New AI Agent</option>
             </select>
             <WorkspaceSelectorDropdown /> {/* Keep on desktop, but make responsive */}
           </div>
@@ -262,7 +431,7 @@ export default function ManageAgentsDialog({
               {activeSection === 'agents' && (
                 <div className="space-y-6 flex-1 flex flex-col">
                   <div className="mt-6 flex-1 flex flex-col">
-                    <AgentsList setActiveSection={setActiveSection} />
+                    <AgentsList setActiveSection={setActiveSection} onClose={() => onOpenChange(false)} />
                   </div>
                 </div>
               )}
@@ -281,7 +450,7 @@ export default function ManageAgentsDialog({
               {activeSection === 'create-agent' && (
                 <div className="space-y-6 flex-1 flex flex-col">
                   <div className="mt-6 flex-1 flex flex-col">
-                    <CreateAgentForm setActiveSection={setActiveSection} />
+                    <CreateAgentForm setActiveSection={setActiveSection} onClose={() => onOpenChange(false)} />
                   </div>
                 </div>
               )}

@@ -111,7 +111,7 @@ alter table public.chat_messages alter column content set not null;
 alter table public.chat_messages alter column created_at set default now();
 alter table public.chat_messages alter column created_at set not null;
 
-alter table public.chat_messages drop column if exists workspace_id;
+alter table public.chat_messages add column if not exists workspace_id uuid;
 alter table public.chat_messages drop column if exists agent_id;
 alter table public.chat_messages drop column if exists sender;
 
